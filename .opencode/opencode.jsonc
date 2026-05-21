@@ -10,7 +10,7 @@
       "/privte/**": "deny"
     }
   },
-  "plugin": ["@sveltejs/opencode"],
+  "plugin": ["@sveltejs/opencode", "opencode-codebase-index"],
   "mcp": {
     "github": {
       "type": "remote",
