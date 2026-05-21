@@ -305,8 +305,11 @@ When a patient submits a response, the API compiles it into a FHIR Questionnaire
 
 === App Deployment
 
-Whether the patient app and employee app are separate deployments or a single app with role-based views is undecided.
-For the prototype, the simpler option should be chosen and the decision documented.
+*Resolved in issue #9 (feature/2-project-foundation).*
+The patient app and employee app are two separate Svelte SPA packages (`apps/patient` and `apps/employee`),
+each built with Vite and served as static files by the Elysia API server.
+This keeps the patient bundle free of employee code without requiring tree-shaking.
+See ADR-006 in `architecture.adoc`.
 
 == Non-Functional Requirements
 
@@ -317,7 +320,7 @@ Modern tooling:: Use new, promising libraries where they add value. Use proven o
 == Open Questions
 
 . What is the precise grammar of the `.mediform` format? (To be defined in a separate format specification.)
-. Single app or two apps for patient vs. employee?
+. ~~Single app or two apps for patient vs. employee?~~ *Resolved: two separate Svelte SPA packages. See ADR-006.*
 . How should the format handle versioning of questionnaires?
 . What is the iframe sandboxing model for custom renderers? (CSP, allowed APIs, size constraints.)
 . How are patients linked to questionnaires? (Link-based, code-based, or FHIR Patient reference?)
