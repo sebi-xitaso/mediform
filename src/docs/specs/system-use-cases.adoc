@@ -1,0 +1,1345 @@
+= mediform: System Use Cases
+:revdate: 2026-05-21
+:version: 0.1.0
+:status: Draft
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Overview
+
+This document derives system-level use cases from the persona use cases
+(uc-patient.adoc, uc-nurse.adoc, uc-trained-staff.adoc) and the business
+rules index (business-rules.adoc).
+
+Each system use case describes a concrete interface: an API endpoint, an
+internal processing step, or a file format contract.
+Requirements within each use case use EARS syntax
+(When/While/If/Shall) where applicable.
+
+=== Conventions
+
+Base URL:: All API paths are relative to the Elysia server root.
+Content type:: All request and response bodies are `application/json` unless stated otherwise.
+IDs:: Questionnaire IDs are opaque strings (UUIDs). Response IDs are opaque strings.
+Auth:: _(Prototype shortcut: no authentication. All endpoints are open. See PRD, Out of Scope.)_
+
+=== Traceability Matrix
+
+[cols="2,2,2"]
+|===
+| Persona UC | System UC(s) | Endpoint(s)
+
+| UC-P1 | SUC-01, SUC-02, SUC-10, SUC-11 | GET /patient/questionnaires/:id, POST /patient/questionnaires/:id/responses
+| UC-P2 | SUC-03 | GET /patient/responses/:id
+| UC-N1 | SUC-04, SUC-10 | POST /staff/questionnaires/import
+| UC-N2 | SUC-05, SUC-10 | POST /staff/questionnaires/preview
+| UC-N3 | SUC-06, SUC-10 | PUT /staff/questionnaires/:id
+| UC-N4 | SUC-07, SUC-11 | POST /staff/questionnaires/:id/submit
+| UC-N5 | SUC-08 | GET /staff/questionnaires
+| UC-TS1 | SUC-09 | POST /staff/questionnaires/:id/review
+| UC-TS5 | SUC-12 | POST /staff/questionnaires/:id/publish
+| UC-TS6 | SUC-13 | POST /staff/questionnaires/:id/retire
+| UC-TS7 | SUC-08 | GET /staff/questionnaires
+| UC-TS8 | SUC-14 | GET /staff/questionnaires/:id/quality-checks
+|===
+
+'''
+
+== Patient API
+
+=== SUC-01: Get Published Questionnaire for Fill-In
+
+[cols="1,3"]
+|===
+| ID | SUC-01
+| Persona UC | UC-P1 (steps 1-4)
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | GET
+| Path | /patient/questionnaires/:id
+| Precondition | Questionnaire with `:id` exists and is in Published status (BR-004).
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:id` (path) | Questionnaire UUID. Required. Format: UUID v4.
+|===
+
+No request body.
+
+==== Processing
+
+. Retrieve the questionnaire record by ID.
+. *If* the questionnaire does not exist, *the system shall* return 404.
+. *If* the questionnaire status is not `published`, *the system shall* return 404. _(BR-004: patients see only published questionnaires.)_
+. *If* the questionnaire status is `retired`, *the system shall* return 410 Gone. _(BR-032)_
+. Parse the stored `.mediform` source. _(SUC-10)_
+. Compile to a renderable structure: sections, questions with descriptions, input types, options, and custom renderer code. _(SUC-10)_
+. Strip FHIR-internal metadata (LOINC codes, SNOMED codes, `maps-to`) from the response. Patients do not need it.
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Renderable questionnaire structure.
+| Not found | 404 | Questionnaire does not exist or is not published.
+| Gone | 410 | Questionnaire is retired.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface PatientQuestionnaire {
+  id: string;
+  title: string;
+  description: string;
+  sections: Section[];
+}
+
+interface Section {
+  title: string | null;       // null for the implicit root section
+  questions: PatientQuestion[];
+}
+
+interface PatientQuestion {
+  id: string;                 // question identifier within the questionnaire
+  title: string;
+  description: string;        // markdown
+  type: "boolean" | "integer" | "decimal" | "string" | "date"
+      | "choice" | "scale" | "custom";
+  required: boolean;
+  config: Record<string, unknown>;  // type-specific: options, min, max, step, unit
+  renderer?: string;          // JS source code, present only when type = "custom"
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 404 | `Questionnaire not found` | Check the link. The questionnaire may not exist or may not be published yet.
+| 410 | `Questionnaire retired` | This questionnaire is no longer accepting responses.
+| 500 | `Internal server error` | Retry. If persistent, contact support.
+|===
+
+==== Non-Functional Requirements
+
+NFR-01:: *When* a patient requests a published questionnaire, *the system shall* respond within 500ms under normal load.
+NFR-02:: _(Prototype shortcut: no rate limiting.)_
+
+'''
+
+=== SUC-02: Submit Questionnaire Response
+
+[cols="1,3"]
+|===
+| ID | SUC-02
+| Persona UC | UC-P1 (steps 6-12)
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | POST
+| Path | /patient/questionnaires/:id/responses
+| Precondition | Questionnaire with `:id` exists and is in Published status (BR-004).
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:id` (path) | Questionnaire UUID. Required.
+|===
+
+.Request body schema
+[source,typescript]
+----
+interface SubmitResponseRequest {
+  answers: Answer[];
+}
+
+interface Answer {
+  questionId: string;
+  value: unknown;  // must match the question's maps-to type
+}
+----
+
+==== Validation Rules
+
+. *The system shall* reject the request *if* any required question (per the `.mediform` definition) has no corresponding answer. _(BR-001)_
+. *The system shall* reject the request *if* any answer value does not match the declared `maps-to` type for that question. _(BR-002)_
+. *The system shall* reject the request *if* the questionnaire is not in Published status. _(BR-004)_
+. *The system shall* reject the request *if* the questionnaire is in Retired status. _(BR-032)_
+. *The system shall* ignore answers for question IDs that do not exist in the questionnaire.
+
+==== Processing
+
+. Retrieve the questionnaire and its `.mediform` definition.
+. Validate the request against the rules above.
+. *If* validation fails, *the system shall* return 422 with details.
+. Compile answers into a FHIR QuestionnaireResponse resource. _(SUC-11)_
+. For each answer mapped to an Observation (via `loinc` field), create a FHIR Observation resource. _(SUC-11)_
+. Store the QuestionnaireResponse and all Observations on the HAPI FHIR server atomically. _(BR-005)_
+. *If* HAPI FHIR storage fails, *the system shall* return 502 and store nothing. _(BR-005)_
+. Generate a response link for the patient.
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Created | 201 | Response stored. Returns response ID and link.
+| Bad request | 400 | Malformed JSON.
+| Not found | 404 | Questionnaire not found or not published.
+| Gone | 410 | Questionnaire retired.
+| Unprocessable | 422 | Validation failed (missing answers, type mismatch).
+| Bad gateway | 502 | HAPI FHIR server unreachable or returned an error.
+|===
+
+.201 response schema
+[source,typescript]
+----
+interface SubmitResponseResult {
+  responseId: string;
+  responseLink: string;   // URL for UC-P2
+  fhirQuestionnaireResponseId: string;
+  observationIds: string[];
+}
+----
+
+.422 response schema
+[source,typescript]
+----
+interface ValidationError {
+  errors: {
+    questionId: string;
+    code: "REQUIRED" | "TYPE_MISMATCH" | "UNKNOWN_QUESTION";
+    message: string;
+    expected?: string;  // expected type, for TYPE_MISMATCH
+    received?: string;  // actual type, for TYPE_MISMATCH
+  }[];
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 400 | `Malformed request body` | Fix JSON syntax.
+| 404 | `Questionnaire not found` | Check the questionnaire ID.
+| 410 | `Questionnaire retired` | This questionnaire no longer accepts responses.
+| 422 | `Validation failed` | See `errors` array for details. Fix and resubmit.
+| 502 | `FHIR server unavailable` | Retry later. No data was stored.
+|===
+
+==== Non-Functional Requirements
+
+NFR-03:: *When* a patient submits a response, *the system shall* complete validation within 200ms.
+NFR-04:: *When* a patient submits a response, *the system shall* complete FHIR storage within 2000ms.
+NFR-05:: *The system shall* guarantee atomicity: either all FHIR resources (QuestionnaireResponse + Observations) are created, or none are. _(BR-005)_
+
+'''
+
+=== SUC-03: Get Completed Response
+
+[cols="1,3"]
+|===
+| ID | SUC-03
+| Persona UC | UC-P2
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | GET
+| Path | /patient/responses/:responseId
+| Precondition | A QuestionnaireResponse with `:responseId` exists on the HAPI FHIR server.
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:responseId` (path) | Response UUID. Required.
+|===
+
+No request body.
+
+==== Processing
+
+. Retrieve the QuestionnaireResponse from HAPI FHIR by ID.
+. *If* not found, *the system shall* return 404.
+. Retrieve the associated questionnaire definition.
+. Assemble a read-only view: each question with its recorded answer value. _(BR-006, BR-007)_
+. For custom renderer questions, return the stored value as a plain value (no renderer code). _(BR-007)_
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Read-only response with questions and answers.
+| Not found | 404 | Response not found.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface CompletedResponse {
+  responseId: string;
+  questionnaireId: string;
+  questionnaireTitle: string;
+  submittedAt: string;          // ISO 8601
+  sections: CompletedSection[];
+}
+
+interface CompletedSection {
+  title: string | null;
+  questions: CompletedQuestion[];
+}
+
+interface CompletedQuestion {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  answer: {
+    value: unknown;
+    displayValue: string;       // human-readable representation
+  } | null;                     // null if question was optional and unanswered
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 404 | `Response not found` | Check the link. The response may not exist.
+| 502 | `FHIR server unavailable` | Retry later.
+|===
+
+==== Non-Functional Requirements
+
+NFR-06:: *When* a patient requests a completed response, *the system shall* respond within 500ms.
+
+'''
+
+== Employee API -- Questionnaire Management
+
+=== SUC-04: Import Questionnaire
+
+[cols="1,3"]
+|===
+| ID | SUC-04
+| Persona UC | UC-N1
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | POST
+| Path | /staff/questionnaires/import
+| Precondition | None.
+|===
+
+==== Input
+
+.Request body schema
+[source,typescript]
+----
+interface ImportRequest {
+  source: string;   // raw .mediform file content
+}
+----
+
+==== Validation Rules
+
+. *The system shall* parse the `source` field as a `.mediform` file. _(SUC-10)_
+. *If* the source has syntax errors, *the system shall* return 422 with error details including line numbers. _(BR-008)_
+. *If* required metadata fields are missing, *the system shall* include warnings in the response but not reject the request. _(BR-010)_
+
+==== Processing
+
+. Parse and validate the `.mediform` source. _(SUC-10)_
+. *If* syntax is invalid, return 422.
+. Check for missing required metadata fields (title, maps-to on each question, loinc on each question).
+. Create a new questionnaire record in Draft status. _(BR-009)_
+. Store the raw `.mediform` source and the parsed structure.
+. Return the created questionnaire with any warnings.
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Created | 201 | Questionnaire created in Draft status.
+| Bad request | 400 | Missing `source` field or empty content.
+| Unprocessable | 422 | Syntax errors in `.mediform` source.
+|===
+
+.201 response schema
+[source,typescript]
+----
+interface ImportResult {
+  questionnaire: QuestionnaireRecord;
+  warnings: MetadataWarning[];
+}
+
+interface MetadataWarning {
+  questionId?: string;    // null for questionnaire-level warnings
+  field: string;          // e.g., "loinc", "maps-to", "title"
+  message: string;
+}
+----
+
+.422 response schema
+[source,typescript]
+----
+interface ParseError {
+  errors: {
+    line: number;
+    column?: number;
+    message: string;
+  }[];
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 400 | `Missing or empty source` | Provide the `.mediform` file content in the `source` field.
+| 422 | `Syntax errors in .mediform source` | See `errors` array. Fix the source and retry.
+| 500 | `Internal server error` | Retry.
+|===
+
+==== Non-Functional Requirements
+
+NFR-07:: *When* a nurse imports a `.mediform` file, *the system shall* parse and validate within 300ms for files up to 50KB.
+
+'''
+
+=== SUC-05: Preview Questionnaire
+
+[cols="1,3"]
+|===
+| ID | SUC-05
+| Persona UC | UC-N2
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | POST
+| Path | /staff/questionnaires/preview
+| Precondition | None. Preview works on arbitrary `.mediform` content, including unsaved edits.
+|===
+
+==== Input
+
+.Request body schema
+[source,typescript]
+----
+interface PreviewRequest {
+  source: string;   // raw .mediform content (may be unsaved)
+}
+----
+
+==== Processing
+
+. Parse the `.mediform` source. _(SUC-10)_
+. *If* syntax is invalid, return the errors but also return a partial preview for the valid portions. _(Best effort for prototype.)_
+. Compile to a renderable structure identical to SUC-01 output. _(BR-012)_
+. *The system shall not* store any data. _(BR-011)_
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Renderable preview structure. May include parse errors for invalid portions.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface PreviewResult {
+  questionnaire: PatientQuestionnaire | null;  // null if entirely unparseable
+  errors: ParseError["errors"];                // empty if fully valid
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 400 | `Missing or empty source` | Provide `.mediform` content.
+| 500 | `Internal server error` | Retry.
+|===
+
+==== Non-Functional Requirements
+
+NFR-08:: *When* a nurse requests a preview, *the system shall* respond within 300ms. _(Same budget as parsing.)_
+NFR-09:: *The system shall not* persist any data during preview. _(BR-011)_
+
+'''
+
+=== SUC-06: Update Questionnaire Source
+
+[cols="1,3"]
+|===
+| ID | SUC-06
+| Persona UC | UC-N3
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | PUT
+| Path | /staff/questionnaires/:id
+| Precondition | Questionnaire exists and is in Draft status. _(BR-013)_
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:id` (path) | Questionnaire UUID. Required.
+|===
+
+.Request body schema
+[source,typescript]
+----
+interface UpdateRequest {
+  source: string;   // updated .mediform content
+}
+----
+
+==== Validation Rules
+
+. *The system shall* reject the request *if* the questionnaire is not in Draft status. _(BR-013)_
+. *The system shall* parse the source for validation but *shall* allow saving even with syntax errors. _(BR-014)_
+
+==== Processing
+
+. Retrieve the questionnaire by ID.
+. *If* not found, return 404.
+. *If* status is not Draft, return 409 Conflict.
+. Parse the new source. _(SUC-10)_
+. Store the updated source and parsed structure (or parse errors if invalid).
+. Update the `lastModified` timestamp.
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Questionnaire updated. Includes validation results.
+| Not found | 404 | Questionnaire not found.
+| Conflict | 409 | Questionnaire is not in Draft status.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface UpdateResult {
+  questionnaire: QuestionnaireRecord;
+  validation: {
+    valid: boolean;
+    errors: ParseError["errors"];
+    warnings: MetadataWarning[];
+  };
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 400 | `Missing or empty source` | Provide `.mediform` content.
+| 404 | `Questionnaire not found` | Check the ID.
+| 409 | `Questionnaire is not in Draft status` | Only Draft questionnaires can be edited.
+| 500 | `Internal server error` | Retry.
+|===
+
+==== Non-Functional Requirements
+
+NFR-10:: *When* a nurse saves an edit, *the system shall* respond within 300ms.
+
+'''
+
+=== SUC-07: Submit Questionnaire for Review
+
+[cols="1,3"]
+|===
+| ID | SUC-07
+| Persona UC | UC-N4
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | POST
+| Path | /staff/questionnaires/:id/submit
+| Precondition | Questionnaire exists, is in Draft status, has valid syntax, and has all required metadata. _(BR-016, BR-017)_
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:id` (path) | Questionnaire UUID. Required.
+|===
+
+No request body.
+
+==== Validation Rules
+
+. *The system shall* reject the request *if* the questionnaire is not in Draft status.
+. *The system shall* reject the request *if* the `.mediform` source has syntax errors. _(BR-016)_
+. *The system shall* reject the request *if* required metadata fields are missing. _(BR-017)_
+
+==== Processing
+
+. Retrieve the questionnaire by ID.
+. *If* not found, return 404.
+. *If* status is not Draft, return 409.
+. Parse and validate the `.mediform` source. _(SUC-10)_
+. *If* syntax errors exist, return 422.
+. *If* required metadata is missing, return 422.
+. Run automated quality checks. _(SUC-14-internal)_
+.. Syntax validity (already confirmed).
+.. All required metadata fields present (already confirmed).
+.. FHIR codes reference known code systems (LOINC, SNOMED).
+.. Custom renderers parse without JS syntax errors.
+. *If* any quality check fails, return 422 with check results. _(BR-019)_
+. Transition the questionnaire to Review status.
+. Store the quality check results.
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Questionnaire transitioned to Review. Quality checks passed.
+| Not found | 404 | Questionnaire not found.
+| Conflict | 409 | Questionnaire is not in Draft status.
+| Unprocessable | 422 | Validation or quality check failure.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface SubmitResult {
+  questionnaire: QuestionnaireRecord;  // status = "review"
+  qualityChecks: QualityCheckResult[];
+}
+----
+
+.422 response schema
+[source,typescript]
+----
+interface SubmitError {
+  reason: "SYNTAX_ERRORS" | "MISSING_METADATA" | "QUALITY_CHECK_FAILED";
+  errors?: ParseError["errors"];
+  warnings?: MetadataWarning[];
+  qualityChecks?: QualityCheckResult[];
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 404 | `Questionnaire not found` | Check the ID.
+| 409 | `Questionnaire is not in Draft status` | Only Draft questionnaires can be submitted.
+| 422 | `Cannot submit: syntax errors` | Fix errors and retry.
+| 422 | `Cannot submit: missing metadata` | Fill in required fields and retry.
+| 422 | `Cannot submit: quality checks failed` | See `qualityChecks` for details. Fix and retry.
+| 500 | `Internal server error` | Retry.
+|===
+
+==== Non-Functional Requirements
+
+NFR-11:: *When* a nurse submits for review, *the system shall* complete all quality checks within 1000ms.
+
+'''
+
+=== SUC-08: List Questionnaires
+
+[cols="1,3"]
+|===
+| ID | SUC-08
+| Persona UC | UC-N5, UC-TS7
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | GET
+| Path | /staff/questionnaires
+| Precondition | None.
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `status` (query, optional) | Filter by status. One of: `draft`, `review`, `approved`, `published`, `retired`, `rejected`. May be repeated for multiple statuses.
+| `author` (query, optional) | Filter by author ID. _(Prototype shortcut: without auth, this filter may be ignored. BR-020.)_
+|===
+
+==== Processing
+
+. Retrieve all questionnaire records.
+. *If* `status` filter is provided, include only matching questionnaires.
+. *If* `author` filter is provided, include only matching questionnaires.
+. Sort by last-modified date, descending.
+. *While* building the response, *the system shall* prioritize questionnaires in Review status in the sort order. _(BR-035)_
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | List of questionnaire summaries.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface QuestionnaireListItem {
+  id: string;
+  title: string;
+  status: QuestionnaireStatus;
+  author: string;             // author identifier or name
+  lastModified: string;       // ISO 8601
+  hasReviewFeedback: boolean; // true if returned from review with feedback
+}
+
+type QuestionnaireStatus =
+  "draft" | "review" | "approved" | "published" | "retired" | "rejected";
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 400 | `Invalid status filter` | Use one of the valid status values.
+| 500 | `Internal server error` | Retry.
+|===
+
+==== Non-Functional Requirements
+
+NFR-12:: *When* a user requests the questionnaire list, *the system shall* respond within 300ms for up to 500 questionnaires.
+
+'''
+
+=== SUC-09: Review Decision (Approve / Request Changes / Reject)
+
+[cols="1,3"]
+|===
+| ID | SUC-09
+| Persona UC | UC-TS1 (including TS-2, TS-3, TS-4)
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | POST
+| Path | /staff/questionnaires/:id/review
+| Precondition | Questionnaire exists and is in Review status. _(BR-021)_
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:id` (path) | Questionnaire UUID. Required.
+|===
+
+.Request body schema
+[source,typescript]
+----
+interface ReviewDecisionRequest {
+  decision: "approve" | "request_changes" | "reject";
+  feedback?: string;   // required for request_changes and reject (BR-023)
+}
+----
+
+==== Validation Rules
+
+. *The system shall* reject the request *if* the questionnaire is not in Review status. _(BR-021)_
+. *If* `decision` is `request_changes` or `reject`, *the system shall* require a non-empty `feedback` field. _(BR-023)_
+. *The system shall* accept `approve` even if automated quality checks have failures. _(BR-024)_
+
+==== Processing
+
+. Retrieve the questionnaire by ID.
+. *If* not found, return 404.
+. *If* status is not Review, return 409.
+. Validate the request.
+. *If* `decision` is `approve`:
+.. Transition to Approved status.
+. *If* `decision` is `request_changes`:
+.. Attach feedback to the questionnaire. _(BR-025)_
+.. Transition to Draft status.
+. *If* `decision` is `reject`:
+.. Attach rejection reason to the questionnaire.
+.. Transition to Rejected status.
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Decision applied. Returns updated questionnaire.
+| Not found | 404 | Questionnaire not found.
+| Conflict | 409 | Questionnaire is not in Review status.
+| Unprocessable | 422 | Missing feedback for request_changes or reject.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface ReviewDecisionResult {
+  questionnaire: QuestionnaireRecord;  // updated status
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 400 | `Invalid decision value` | Use `approve`, `request_changes`, or `reject`.
+| 404 | `Questionnaire not found` | Check the ID.
+| 409 | `Questionnaire is not in Review status` | Only Review questionnaires can receive a decision.
+| 422 | `Feedback required for this decision` | Provide a `feedback` field.
+| 500 | `Internal server error` | Retry.
+|===
+
+==== Non-Functional Requirements
+
+NFR-13:: *When* a trained staff member submits a review decision, *the system shall* respond within 200ms.
+
+'''
+
+== Internal Processing
+
+=== SUC-10: Parse and Compile `.mediform` Source
+
+[cols="1,3"]
+|===
+| ID | SUC-10
+| Actor-Goal Ref | SYS-1, SYS-2
+| Interface | Internal module (not an HTTP endpoint)
+|===
+
+This is the core compilation pipeline, invoked by SUC-01, SUC-04, SUC-05, SUC-06, SUC-07, and SUC-12.
+
+==== Input
+
+[source,typescript]
+----
+interface ParseInput {
+  source: string;   // raw .mediform content
+}
+----
+
+==== Processing: Parse Phase (SYS-1)
+
+. Extract YAML frontmatter (delimited by `---`).
+. *If* frontmatter is missing or malformed YAML, *the system shall* produce a parse error with line number.
+. Parse the body:
+.. `##` headings become sections.
+.. `#` headings become questions.
+.. Prose lines (non-metadata) below a heading become the question description (markdown).
+.. Lines starting with `- key: value` become metadata properties.
+.. Lines starting with `- key:` followed by indented sub-items become structured metadata (e.g., options).
+.. Fenced code blocks tagged `js` within a `renderer:` property become custom renderer source.
+. *If* any structural rule is violated, *the system shall* produce a parse error with line number and column.
+. Validate required fields per question: `type` is always required.
+. Validate metadata field values: `type` must be one of the known types, `maps-to` must be a known FHIR answer type, `required` must be boolean.
+
+==== Processing: Compile Phase (SYS-2)
+
+. Map the parsed structure to a FHIR Questionnaire resource:
+.. Frontmatter `title` -> `Questionnaire.title`
+.. Frontmatter `description` -> `Questionnaire.description`
+.. Frontmatter `status` -> `Questionnaire.status` (mapped to FHIR status codes)
+.. Each section -> `Questionnaire.item` with `type: "group"`
+.. Each question -> `Questionnaire.item` with appropriate `type` and `code` (from `loinc`)
+.. `options` with SNOMED codes -> `answerOption` with `valueCoding`
+.. `maps-to` -> determines the FHIR answer type
+. *If* a LOINC or SNOMED code is syntactically malformed, *the system shall* produce a compilation error.
+
+==== Output
+
+[source,typescript]
+----
+interface ParseResult {
+  success: boolean;
+  questionnaire?: ParsedQuestionnaire;  // present if success
+  fhirQuestionnaire?: FHIRQuestionnaire; // present if compilation succeeds
+  errors: { line: number; column?: number; message: string }[];
+  warnings: { questionId?: string; field: string; message: string }[];
+}
+
+interface ParsedQuestionnaire {
+  frontmatter: {
+    title: string;
+    description: string;
+    version: string;
+    status: string;
+  };
+  sections: ParsedSection[];
+}
+
+interface ParsedSection {
+  title: string | null;
+  questions: ParsedQuestion[];
+}
+
+interface ParsedQuestion {
+  id: string;                           // generated or derived from title
+  title: string;
+  description: string;
+  type: string;
+  required: boolean;
+  mapsTo: string;                       // FHIR answer type
+  loinc?: string;
+  options?: { label: string; code?: string; system?: string }[];
+  config: Record<string, unknown>;      // min, max, step, unit, etc.
+  renderer?: string;                    // JS source for custom type
+}
+----
+
+==== Non-Functional Requirements
+
+NFR-14:: *The system shall* parse a 50KB `.mediform` file within 100ms.
+NFR-15:: *The system shall* compile a parsed questionnaire to FHIR within 100ms.
+
+'''
+
+=== SUC-11: Compile Responses to FHIR
+
+[cols="1,3"]
+|===
+| ID | SUC-11
+| Actor-Goal Ref | SYS-4, SYS-5
+| Interface | Internal module (not an HTTP endpoint)
+|===
+
+Invoked by SUC-02 during response submission.
+
+==== Input
+
+[source,typescript]
+----
+interface CompileResponseInput {
+  questionnaire: ParsedQuestionnaire;
+  answers: Answer[];
+}
+----
+
+==== Processing
+
+. For each answer:
+.. Look up the corresponding question in the parsed questionnaire.
+.. Map the answer value to the FHIR type declared in `maps-to`.
+.. Create a `QuestionnaireResponse.item` entry.
+. Assemble the full FHIR QuestionnaireResponse resource:
+.. `questionnaire` reference -> the FHIR Questionnaire ID on HAPI.
+.. `status` -> `completed`.
+.. `authored` -> current timestamp.
+. For each answer where the question has a `loinc` code:
+.. Create a FHIR Observation resource:
+... `code` -> LOINC code from the question.
+... `value[x]` -> the answer value, typed according to `maps-to`.
+... `status` -> `final`.
+... `derivedFrom` -> reference to the QuestionnaireResponse.
+. *If* a value cannot be mapped to the declared FHIR type, *the system shall* produce a compilation error. _(This should not happen if SUC-02 validation passed, but is a safety net.)_
+
+==== Output
+
+[source,typescript]
+----
+interface CompileResponseResult {
+  questionnaireResponse: FHIRQuestionnaireResponse;
+  observations: FHIRObservation[];
+  errors: { questionId: string; message: string }[];
+}
+----
+
+==== Non-Functional Requirements
+
+NFR-16:: *The system shall* compile a response with up to 50 answers within 100ms.
+
+'''
+
+== Employee API -- Lifecycle Actions
+
+=== SUC-12: Publish Questionnaire
+
+[cols="1,3"]
+|===
+| ID | SUC-12
+| Persona UC | UC-TS5
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | POST
+| Path | /staff/questionnaires/:id/publish
+| Precondition | Questionnaire exists and is in Approved status. _(BR-026)_
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:id` (path) | Questionnaire UUID. Required.
+|===
+
+No request body.
+
+==== Processing
+
+. Retrieve the questionnaire by ID.
+. *If* not found, return 404.
+. *If* status is not Approved, return 409. _(BR-026)_
+. Compile the `.mediform` source to a FHIR Questionnaire resource. _(SUC-10)_
+. *If* compilation fails, return 422. _(BR-029)_
+. Store the FHIR Questionnaire on the HAPI FHIR server with status `active`. _(BR-027)_
+. *If* HAPI storage fails, return 502. _(BR-029)_
+. Transition the questionnaire to Published status.
+. Generate a patient-facing link. _(BR-028)_
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Questionnaire published. Returns patient link.
+| Not found | 404 | Questionnaire not found.
+| Conflict | 409 | Questionnaire is not in Approved status.
+| Unprocessable | 422 | FHIR compilation failed.
+| Bad gateway | 502 | HAPI FHIR server unreachable.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface PublishResult {
+  questionnaire: QuestionnaireRecord;   // status = "published"
+  patientLink: string;
+  fhirQuestionnaireId: string;
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 404 | `Questionnaire not found` | Check the ID.
+| 409 | `Questionnaire is not in Approved status` | Only Approved questionnaires can be published.
+| 422 | `FHIR compilation failed` | See error details. Return to Draft to fix.
+| 502 | `FHIR server unavailable` | Retry later.
+|===
+
+==== Non-Functional Requirements
+
+NFR-17:: *When* a trained staff member publishes a questionnaire, *the system shall* complete compilation and FHIR storage within 2000ms.
+
+'''
+
+=== SUC-13: Retire Questionnaire
+
+[cols="1,3"]
+|===
+| ID | SUC-13
+| Persona UC | UC-TS6
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | POST
+| Path | /staff/questionnaires/:id/retire
+| Precondition | Questionnaire exists and is in Published status. _(BR-030)_
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:id` (path) | Questionnaire UUID. Required.
+|===
+
+No request body. _(Confirmation is a frontend concern, not an API concern. BR-033 applies to the UI.)_
+
+==== Processing
+
+. Retrieve the questionnaire by ID.
+. *If* not found, return 404.
+. *If* status is not Published, return 409. _(BR-030)_
+. Update the FHIR Questionnaire resource status to `retired` on the HAPI server.
+. *If* HAPI update fails, return 502.
+. Transition the questionnaire to Retired status.
+. Existing QuestionnaireResponse and Observation resources are not modified. _(BR-031)_
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Questionnaire retired.
+| Not found | 404 | Questionnaire not found.
+| Conflict | 409 | Questionnaire is not in Published status.
+| Bad gateway | 502 | HAPI FHIR server unreachable.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface RetireResult {
+  questionnaire: QuestionnaireRecord;   // status = "retired"
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 404 | `Questionnaire not found` | Check the ID.
+| 409 | `Questionnaire is not in Published status` | Only Published questionnaires can be retired.
+| 502 | `FHIR server unavailable` | Retry later. Questionnaire remains Published.
+|===
+
+==== Non-Functional Requirements
+
+NFR-18:: *When* a trained staff member retires a questionnaire, *the system shall* respond within 1000ms.
+
+'''
+
+=== SUC-14: Get Quality Check Results
+
+[cols="1,3"]
+|===
+| ID | SUC-14
+| Persona UC | UC-TS8
+| Interface | REST API endpoint
+|===
+
+==== Trigger and Preconditions
+
+[cols="1,3"]
+|===
+| HTTP method | GET
+| Path | /staff/questionnaires/:id/quality-checks
+| Precondition | Questionnaire exists and has been submitted for review at least once (quality checks have run).
+|===
+
+==== Input
+
+[cols="1,3"]
+|===
+| Parameter | Description
+
+| `:id` (path) | Questionnaire UUID. Required.
+|===
+
+No request body.
+
+==== Processing
+
+. Retrieve the questionnaire by ID.
+. *If* not found, return 404.
+. Retrieve the stored quality check results from the most recent submission.
+. *If* no quality checks have run (questionnaire has never been submitted), return 404.
+
+==== Output
+
+[cols="1,1,3"]
+|===
+| Status | Code | Description
+
+| Success | 200 | Quality check results.
+| Not found | 404 | Questionnaire not found or no checks have run.
+|===
+
+.200 response schema
+[source,typescript]
+----
+interface QualityCheckResponse {
+  questionnaireId: string;
+  runAt: string;                        // ISO 8601
+  allPassed: boolean;
+  checks: QualityCheckResult[];
+}
+
+interface QualityCheckResult {
+  name: string;                         // e.g., "syntax_valid", "metadata_complete",
+                                        //       "fhir_codes_known", "renderers_parse"
+  passed: boolean;
+  details?: {
+    questionId?: string;                // which question failed, if applicable
+    message: string;
+  }[];
+}
+----
+
+==== Error Responses
+
+[cols="1,2,2"]
+|===
+| Code | Message | Recovery
+
+| 404 | `Questionnaire not found or no quality checks available` | Check the ID. Submit the questionnaire for review first.
+| 500 | `Internal server error` | Retry.
+|===
+
+==== Non-Functional Requirements
+
+NFR-19:: *When* a trained staff member requests quality check results, *the system shall* respond within 100ms. _(Results are pre-computed and stored.)_
+
+'''
+
+== Shared Data Types
+
+The following types are referenced across multiple system use cases.
+
+[source,typescript]
+----
+interface QuestionnaireRecord {
+  id: string;                           // UUID
+  title: string;
+  description: string;
+  status: QuestionnaireStatus;
+  author: string;
+  source: string;                       // raw .mediform content
+  createdAt: string;                    // ISO 8601
+  lastModified: string;                 // ISO 8601
+  reviewFeedback?: string;              // present if returned from review
+  rejectionReason?: string;             // present if rejected
+  patientLink?: string;                 // present if published
+  fhirQuestionnaireId?: string;         // present if published
+}
+
+type QuestionnaireStatus =
+  "draft" | "review" | "approved" | "published" | "retired" | "rejected";
+----
+
+'''
+
+== Non-Functional Requirements Summary
+
+[cols="1,4,1"]
+|===
+| ID | Requirement | Budget
+
+| NFR-01 | *When* a patient requests a published questionnaire, *the system shall* respond within 500ms. | 500ms
+| NFR-02 | _(Prototype shortcut: no rate limiting.)_ | --
+| NFR-03 | *When* a patient submits a response, *the system shall* complete validation within 200ms. | 200ms
+| NFR-04 | *When* a patient submits a response, *the system shall* complete FHIR storage within 2000ms. | 2000ms
+| NFR-05 | *The system shall* guarantee atomicity of response storage. _(BR-005)_ | --
+| NFR-06 | *When* a patient requests a completed response, *the system shall* respond within 500ms. | 500ms
+| NFR-07 | *When* a nurse imports a `.mediform` file, *the system shall* parse and validate within 300ms (up to 50KB). | 300ms
+| NFR-08 | *When* a nurse requests a preview, *the system shall* respond within 300ms. | 300ms
+| NFR-09 | *The system shall not* persist any data during preview. _(BR-011)_ | --
+| NFR-10 | *When* a nurse saves an edit, *the system shall* respond within 300ms. | 300ms
+| NFR-11 | *When* a nurse submits for review, *the system shall* complete all quality checks within 1000ms. | 1000ms
+| NFR-12 | *When* a user requests the questionnaire list, *the system shall* respond within 300ms (up to 500 items). | 300ms
+| NFR-13 | *When* a trained staff member submits a review decision, *the system shall* respond within 200ms. | 200ms
+| NFR-14 | *The system shall* parse a 50KB `.mediform` file within 100ms. | 100ms
+| NFR-15 | *The system shall* compile a parsed questionnaire to FHIR within 100ms. | 100ms
+| NFR-16 | *The system shall* compile a response with up to 50 answers within 100ms. | 100ms
+| NFR-17 | *When* publishing, *the system shall* complete compilation and FHIR storage within 2000ms. | 2000ms
+| NFR-18 | *When* retiring, *the system shall* respond within 1000ms. | 1000ms
+| NFR-19 | *When* requesting quality check results, *the system shall* respond within 100ms. | 100ms
+|===
+
+NOTE: All performance budgets are prototype-grade targets for a single developer machine under minimal load.
+They serve as design guidance, not SLA commitments.

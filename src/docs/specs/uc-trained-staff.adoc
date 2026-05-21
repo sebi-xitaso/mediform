@@ -1,0 +1,650 @@
+= Use Cases: Trained Staff
+:revdate: 2026-05-21
+:version: 0.1.0
+:status: Draft
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== UC-TS1: Review a Questionnaire
+
+[cols="1,3"]
+|===
+| ID | UC-TS1
+| Goal | Review a questionnaire submitted by a nurse
+| Actor-Goal Ref | TS-1, TS-2, TS-3, TS-4
+| Level | User Goal
+| Primary Actor | Trained Staff
+|===
+
+NOTE: This use case covers the review process and its three possible outcomes: approve (TS-2), reject (TS-3), and request changes (TS-4).
+Each outcome is a branch of the same user goal: the trained staff member reviews a questionnaire and decides its fate.
+
+=== Stakeholders and Interests
+
+Trained Staff:: Wants to verify clinical correctness and FHIR mapping quality before a questionnaire reaches patients.
+Nurse:: Wants timely, clear feedback on submitted questionnaires.
+Patient (indirect):: Benefits from reviewed, high-quality questionnaires.
+Hospital:: Wants a quality gate between creation and publication.
+
+=== Trigger
+
+A questionnaire in Review status appears on the trained staff member's dashboard.
+
+=== Preconditions
+
+. A questionnaire exists in Review status.
+. Automated quality checks have already run (during submission, UC-N4).
+
+=== Main Success Scenario (Approve)
+
+. The trained staff member opens the review dashboard.
+. The trained staff member selects a questionnaire in Review status.
+. The system displays the questionnaire: source, rendered preview, and automated quality check results. _(SYS-3)_
+. The trained staff member reviews the clinical content (question wording, options, descriptions).
+. The trained staff member reviews the FHIR mappings (LOINC codes, SNOMED codes, value types).
+. The trained staff member reviews the automated quality check results.
+. The trained staff member approves the questionnaire.
+. The system transitions the questionnaire to Approved status.
+
+=== Extensions
+
+*7a. The trained staff member requests changes.*::
+  7a.1. The trained staff member writes feedback describing the required changes.
+  7a.2. The system transitions the questionnaire back to Draft status.
+  7a.3. The feedback is attached to the questionnaire and visible to the nurse (UC-N3, extension 2a).
+
+*7b. The trained staff member rejects the questionnaire.*::
+  7b.1. The trained staff member writes a rejection reason.
+  7b.2. The system transitions the questionnaire to Rejected status.
+  7b.3. The rejection reason is attached to the questionnaire.
+
+*3a. The trained staff member wants to preview the questionnaire as a patient.*::
+  3a.1. The system renders the questionnaire in patient preview mode (same rendering as UC-N2).
+  3a.2. The trained staff member interacts with the preview.
+  3a.3. The trained staff member returns to the review screen.
+
+*6a. An automated quality check has failed.*::
+  6a.1. The system highlights the failed check.
+  6a.2. The trained staff member may still approve if they judge the failure acceptable, or request changes.
+
+=== Postconditions
+
+Success Guarantee (Approve):: The questionnaire is in Approved status.
+Success Guarantee (Request Changes):: The questionnaire is in Draft status with feedback attached.
+Success Guarantee (Reject):: The questionnaire is in Rejected status with a reason attached.
+Minimal Guarantee:: The questionnaire remains in Review status if the trained staff member takes no action.
+
+=== Business Rules
+
+[cols="1,4"]
+|===
+| ID | Rule
+
+| BR-021 | Only questionnaires in Review status can be reviewed.
+| BR-022 | Approval, rejection, and change requests require the trained staff member to have viewed the questionnaire.
+| BR-023 | Change requests and rejections must include written feedback or a reason.
+| BR-024 | A trained staff member may approve a questionnaire even if an automated check has failed, at their discretion.
+| BR-025 | Requesting changes transitions the questionnaire back to Draft with feedback attached.
+|===
+
+=== Activity Diagram
+
+[plantuml]
+----
+@startuml
+start
+:Trained staff opens review dashboard;
+:Selects questionnaire in Review status;
+
+:System displays source, preview, and quality check results;
+
+if (Wants patient preview?) then (yes)
+  :Render patient preview;
+  :Interact with preview;
+  :Return to review screen;
+else (no)
+endif
+
+:Review clinical content;
+:Review FHIR mappings;
+:Review automated quality check results;
+
+switch (Decision?)
+case (Approve)
+  :Transition to Approved status;
+case (Request Changes)
+  :Write feedback;
+  :Transition to Draft status;
+  :Attach feedback to questionnaire;
+case (Reject)
+  :Write rejection reason;
+  :Transition to Rejected status;
+  :Attach reason to questionnaire;
+endswitch
+
+stop
+@enduml
+----
+
+=== Acceptance Criteria
+
+[source,gherkin]
+----
+Feature: Review a questionnaire
+
+  Background:
+    Given a questionnaire "Post-Op Pain Assessment" in Review status
+    And automated quality checks have run
+
+  Scenario: Approve a questionnaire
+    When the trained staff member opens the questionnaire for review
+    Then the system displays the source, rendered preview, and quality check results
+    When the trained staff member approves the questionnaire
+    Then the questionnaire transitions to Approved status
+
+  Scenario: Request changes
+    When the trained staff member opens the questionnaire for review
+    And writes feedback "LOINC code on question 2 should be 38208-5"
+    And selects Request Changes
+    Then the questionnaire transitions to Draft status
+    And the feedback is attached to the questionnaire
+
+  Scenario: Reject a questionnaire
+    When the trained staff member opens the questionnaire for review
+    And writes a rejection reason "Questionnaire duplicates existing assessment"
+    And selects Reject
+    Then the questionnaire transitions to Rejected status
+    And the rejection reason is attached
+
+  Scenario: Approve despite a failed automated check
+    Given one automated quality check has failed
+    When the trained staff member reviews the questionnaire
+    Then the failed check is highlighted
+    And the trained staff member can still approve the questionnaire
+
+  Scenario: Preview as patient during review
+    When the trained staff member selects patient preview
+    Then the questionnaire renders as a patient would see it
+    And the trained staff member can interact with the preview
+    And no data is stored
+
+  Scenario: Change request or rejection requires feedback
+    When the trained staff member selects Request Changes without writing feedback
+    Then the system blocks the action
+    And prompts for feedback
+----
+
+'''
+
+== UC-TS5: Publish a Questionnaire
+
+[cols="1,3"]
+|===
+| ID | UC-TS5
+| Goal | Publish an approved questionnaire so patients can access it
+| Actor-Goal Ref | TS-5
+| Level | User Goal
+| Primary Actor | Trained Staff
+|===
+
+=== Stakeholders and Interests
+
+Trained Staff:: Wants to make a reviewed questionnaire available to patients.
+Patient:: Gains access to a new questionnaire.
+Hospital:: Wants the FHIR Questionnaire resource to exist on the HAPI server for interoperability.
+
+=== Trigger
+
+A questionnaire in Approved status is ready for patient use.
+
+=== Preconditions
+
+. The questionnaire is in Approved status.
+
+=== Main Success Scenario
+
+. The trained staff member opens the questionnaire.
+. The trained staff member selects "Publish."
+. The system compiles the `.mediform` definition into a FHIR Questionnaire resource. _(SYS-2)_
+. The system stores the FHIR Questionnaire on the HAPI FHIR server. _(SYS-6)_
+. The system transitions the questionnaire to Published status.
+. The system generates a patient-facing link for the questionnaire.
+. The system displays the link to the trained staff member.
+
+=== Extensions
+
+*3a. Compilation to FHIR fails.*::
+  3a.1. The system displays the compilation errors.
+  3a.2. The questionnaire remains in Approved status.
+  3a.3. The trained staff member may request changes (returning it to Draft via UC-TS1 extension 7a).
+
+*4a. The HAPI FHIR server is unreachable.*::
+  4a.1. The system displays an error.
+  4a.2. The questionnaire remains in Approved status.
+  4a.3. The trained staff member retries later.
+
+=== Postconditions
+
+Success Guarantee:: The questionnaire is in Published status. A FHIR Questionnaire resource exists on the HAPI server. A patient-facing link is available.
+Minimal Guarantee:: The questionnaire remains in Approved status. No FHIR resource is created.
+
+=== Business Rules
+
+[cols="1,4"]
+|===
+| ID | Rule
+
+| BR-026 | Only questionnaires in Approved status can be published.
+| BR-027 | Publishing creates a FHIR Questionnaire resource on the HAPI server.
+| BR-028 | Publishing generates a patient-facing link.
+| BR-029 | If FHIR compilation fails at publish time, the questionnaire does not transition to Published.
+|===
+
+=== Activity Diagram
+
+[plantuml]
+----
+@startuml
+start
+:Trained staff opens approved questionnaire;
+:Selects Publish;
+
+:Compile .mediform to FHIR Questionnaire;
+if (Compilation succeeds?) then (yes)
+else (no)
+  :Display compilation errors;
+  :Questionnaire remains Approved;
+  stop
+endif
+
+:Store FHIR Questionnaire on HAPI server;
+if (Storage succeeds?) then (yes)
+else (no)
+  :Display error: server unreachable;
+  :Questionnaire remains Approved;
+  stop
+endif
+
+:Transition to Published status;
+:Generate patient-facing link;
+:Display link to trained staff;
+
+stop
+@enduml
+----
+
+=== Acceptance Criteria
+
+[source,gherkin]
+----
+Feature: Publish a questionnaire
+
+  Scenario: Publish an approved questionnaire
+    Given a questionnaire in Approved status
+    When the trained staff member selects Publish
+    Then the system compiles the questionnaire to a FHIR Questionnaire resource
+    And stores it on the HAPI FHIR server
+    And the questionnaire transitions to Published status
+    And a patient-facing link is generated and displayed
+
+  Scenario: Publish fails due to compilation error
+    Given a questionnaire in Approved status
+    And the .mediform definition has a mapping that cannot compile to FHIR
+    When the trained staff member selects Publish
+    Then the system displays the compilation error
+    And the questionnaire remains in Approved status
+
+  Scenario: Publish fails due to FHIR server unavailability
+    Given a questionnaire in Approved status
+    And the HAPI FHIR server is unreachable
+    When the trained staff member selects Publish
+    Then the system displays an error
+    And the questionnaire remains in Approved status
+    And no FHIR resource is created
+
+  Scenario: Cannot publish a non-approved questionnaire
+    Given a questionnaire in Draft status
+    Then the Publish action is not available
+----
+
+'''
+
+== UC-TS6: Retire a Questionnaire
+
+[cols="1,3"]
+|===
+| ID | UC-TS6
+| Goal | Retire a published questionnaire
+| Actor-Goal Ref | TS-6
+| Level | User Goal
+| Primary Actor | Trained Staff
+|===
+
+=== Stakeholders and Interests
+
+Trained Staff:: Wants to stop collecting responses for an outdated or replaced questionnaire.
+Hospital:: Wants historical data preserved even after retirement.
+
+=== Trigger
+
+A published questionnaire is no longer needed.
+
+=== Preconditions
+
+. The questionnaire is in Published status.
+
+=== Main Success Scenario
+
+. The trained staff member opens the questionnaire.
+. The trained staff member selects "Retire."
+. The system asks for confirmation.
+. The trained staff member confirms.
+. The system transitions the questionnaire to Retired status.
+. The system updates the FHIR Questionnaire resource status on the HAPI server to retired.
+. The patient-facing link stops accepting new responses.
+
+=== Extensions
+
+*4a. The trained staff member cancels.*::
+  4a.1. The questionnaire remains in Published status.
+
+*6a. The HAPI FHIR server is unreachable.*::
+  6a.1. The system displays an error.
+  6a.2. The questionnaire remains in Published status.
+
+=== Postconditions
+
+Success Guarantee:: The questionnaire is in Retired status. No new responses can be submitted. Existing responses and the FHIR Questionnaire resource are preserved.
+Minimal Guarantee:: The questionnaire remains in Published status.
+
+=== Business Rules
+
+[cols="1,4"]
+|===
+| ID | Rule
+
+| BR-030 | Only questionnaires in Published status can be retired.
+| BR-031 | Retirement preserves all existing QuestionnaireResponse and Observation resources.
+| BR-032 | Retired questionnaires do not accept new responses.
+| BR-033 | Retirement requires confirmation.
+|===
+
+=== Activity Diagram
+
+[plantuml]
+----
+@startuml
+start
+:Trained staff opens published questionnaire;
+:Selects Retire;
+
+:System asks for confirmation;
+if (Confirmed?) then (yes)
+else (no)
+  :Questionnaire remains Published;
+  stop
+endif
+
+:Update FHIR Questionnaire status to retired;
+if (HAPI server reachable?) then (yes)
+  :Transition to Retired status;
+  :Patient link stops accepting responses;
+else (no)
+  :Display error;
+  :Questionnaire remains Published;
+endif
+
+stop
+@enduml
+----
+
+=== Acceptance Criteria
+
+[source,gherkin]
+----
+Feature: Retire a questionnaire
+
+  Scenario: Retire a published questionnaire
+    Given a questionnaire in Published status
+    When the trained staff member selects Retire
+    And confirms the action
+    Then the questionnaire transitions to Retired status
+    And the FHIR Questionnaire resource status is updated to retired
+    And the patient-facing link no longer accepts new responses
+
+  Scenario: Cancel retirement
+    Given a questionnaire in Published status
+    When the trained staff member selects Retire
+    And cancels the confirmation
+    Then the questionnaire remains in Published status
+
+  Scenario: Existing responses preserved after retirement
+    Given a questionnaire in Published status
+    And 5 patient responses exist
+    When the trained staff member retires the questionnaire
+    Then all 5 QuestionnaireResponse resources remain on the HAPI server
+
+  Scenario: Cannot retire a non-published questionnaire
+    Given a questionnaire in Draft status
+    Then the Retire action is not available
+----
+
+'''
+
+== UC-TS7: View Questionnaire Dashboard
+
+[cols="1,3"]
+|===
+| ID | UC-TS7
+| Goal | View a dashboard of questionnaires by status
+| Actor-Goal Ref | TS-7
+| Level | User Goal
+| Primary Actor | Trained Staff
+|===
+
+=== Stakeholders and Interests
+
+Trained Staff:: Wants an overview of all questionnaires across the lifecycle to prioritize work.
+
+=== Trigger
+
+The trained staff member opens the employee app.
+
+=== Preconditions
+
+. The trained staff member has access to the employee app.
+
+=== Main Success Scenario
+
+. The trained staff member opens the dashboard.
+. The system retrieves all questionnaires across all statuses.
+. The system displays the dashboard grouped or filterable by status (Draft, Review, Approved, Published, Retired, Rejected).
+. Each entry shows title, status, author (nurse), and last-modified date.
+. The trained staff member scans the dashboard to identify questionnaires needing attention.
+
+=== Extensions
+
+*2a. No questionnaires exist.*::
+  2a.1. The system displays an empty state.
+
+*5a. The trained staff member filters by status.*::
+  5a.1. The system displays only questionnaires matching the selected status.
+
+*5b. The trained staff member opens a questionnaire.*::
+  5b.1. The system navigates to the review screen (UC-TS1) or detail view depending on status.
+
+=== Postconditions
+
+Success Guarantee:: The trained staff member sees an accurate, current dashboard. No data is modified.
+Minimal Guarantee:: No data is modified.
+
+=== Business Rules
+
+[cols="1,4"]
+|===
+| ID | Rule
+
+| BR-034 | The dashboard shows all questionnaires, not just those created by the current user.
+| BR-035 | Questionnaires in Review status are visually prioritized (they need action).
+|===
+
+=== Activity Diagram
+
+[plantuml]
+----
+@startuml
+start
+:Trained staff opens dashboard;
+
+:System retrieves all questionnaires;
+if (Any questionnaires?) then (yes)
+  :Display dashboard grouped by status;
+  :Each entry: title, status, author, last-modified;
+
+  if (Filter applied?) then (yes)
+    :Show only matching status;
+  else (no)
+  endif
+
+  if (Opens a questionnaire?) then (yes)
+    :Navigate to review or detail view;
+  else (no)
+  endif
+else (no)
+  :Display empty state;
+endif
+
+stop
+@enduml
+----
+
+=== Acceptance Criteria
+
+[source,gherkin]
+----
+Feature: View questionnaire dashboard
+
+  Scenario: View dashboard with questionnaires in various statuses
+    Given questionnaires exist in Draft, Review, and Published statuses
+    When the trained staff member opens the dashboard
+    Then all questionnaires are displayed
+    And each entry shows title, status, author, and last-modified date
+
+  Scenario: Filter dashboard by status
+    Given questionnaires exist in Draft, Review, and Published statuses
+    When the trained staff member filters by Review
+    Then only questionnaires in Review status are displayed
+
+  Scenario: Review status is prioritized
+    Given questionnaires exist in Review and Draft statuses
+    When the trained staff member opens the dashboard
+    Then questionnaires in Review status are visually prioritized
+
+  Scenario: Empty dashboard
+    Given no questionnaires exist
+    When the trained staff member opens the dashboard
+    Then the system displays an empty state
+----
+
+'''
+
+== UC-TS8: View Quality Check Results
+
+[cols="1,3"]
+|===
+| ID | UC-TS8
+| Goal | View automated quality check results for a questionnaire
+| Actor-Goal Ref | TS-8
+| Level | User Goal
+| Primary Actor | Trained Staff
+|===
+
+=== Stakeholders and Interests
+
+Trained Staff:: Wants to understand what automated checks found before making a review decision.
+
+=== Trigger
+
+The trained staff member is reviewing a questionnaire and wants to see quality check details.
+
+=== Preconditions
+
+. The questionnaire is in Review or later status.
+. Automated quality checks have run.
+
+=== Main Success Scenario
+
+. The trained staff member opens the quality check results for a questionnaire.
+. The system displays each check with its result (pass/fail) and details.
+. The trained staff member reviews the results.
+
+=== Extensions
+
+*2a. All checks passed.*::
+  2a.1. The system displays a summary: "All checks passed."
+
+*2b. One or more checks failed.*::
+  2b.1. The system highlights failed checks with details (which question, what failed, why).
+
+=== Postconditions
+
+Success Guarantee:: The trained staff member has seen the quality check results. No data is modified.
+Minimal Guarantee:: No data is modified.
+
+=== Business Rules
+
+[cols="1,4"]
+|===
+| ID | Rule
+
+| BR-036 | Quality check results are read-only.
+| BR-037 | Failed checks display the affected question, the check name, and a description of the failure.
+|===
+
+=== Activity Diagram
+
+[plantuml]
+----
+@startuml
+start
+:Trained staff opens quality check results;
+
+:System retrieves check results;
+:Display each check with pass/fail and details;
+
+if (Any failures?) then (yes)
+  :Highlight failed checks;
+  :Show affected question, check name, failure description;
+else (no)
+  :Display summary: all checks passed;
+endif
+
+stop
+@enduml
+----
+
+=== Acceptance Criteria
+
+[source,gherkin]
+----
+Feature: View quality check results
+
+  Scenario: All checks passed
+    Given a questionnaire in Review status
+    And all automated quality checks passed
+    When the trained staff member views quality check results
+    Then the system displays each check as passed
+    And shows a summary: all checks passed
+
+  Scenario: Some checks failed
+    Given a questionnaire in Review status
+    And the check "FHIR codes reference known systems" failed on question 3
+    When the trained staff member views quality check results
+    Then the failed check is highlighted
+    And shows question 3, the check name, and a failure description
+
+  Scenario: Quality check results are read-only
+    When the trained staff member views quality check results
+    Then no edit or re-run actions are available
+----

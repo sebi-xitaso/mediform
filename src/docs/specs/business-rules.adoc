@@ -1,0 +1,144 @@
+= Business Rules Index
+:revdate: 2026-05-21
+:version: 0.1.0
+:status: Draft
+:toc: left
+:toclevels: 2
+:sectnums:
+
+== Overview
+
+This document collects all business rules referenced in the use case specifications.
+Each rule has a single canonical definition here; use cases reference rules by ID.
+
+== Response Submission
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-001 | All required questions must have an answer before submission. | UC-P1
+| BR-002 | Each answer must match the value type declared in the `.mediform` format (`maps-to` field). | UC-P1
+| BR-005 | Response submission is atomic: all FHIR resources are created together or not at all. | UC-P1
+|===
+
+== Custom Renderers
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-003 | Custom renderers run in a sandboxed iframe and cannot access data from other questions. | UC-P1
+|===
+
+== Questionnaire Access
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-004 | Only questionnaires in Published status are accessible to patients. | UC-P1
+| BR-006 | Completed responses are read-only. The patient cannot edit a submitted response. | UC-P2
+| BR-007 | The system displays the stored answer values, not re-executed renderer output. | UC-P2
+|===
+
+== Import
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-008 | A `.mediform` file must pass syntax validation before import. | UC-N1
+| BR-009 | Imported questionnaires always start in Draft status. | UC-N1
+| BR-010 | Missing metadata fields produce warnings, not blocking errors, at import time. | UC-N1
+|===
+
+== Preview
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-011 | Preview does not store any data. Test answers are discarded. | UC-N2
+| BR-012 | Preview renders the questionnaire identically to the patient app. | UC-N2
+|===
+
+== Editing
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-013 | Only questionnaires in Draft status can be edited. | UC-N3
+| BR-014 | Saving a draft with syntax errors is allowed. Submitting for review is not. | UC-N3
+| BR-015 | When a questionnaire is returned from review, the reviewer's feedback is visible in the editor. | UC-N3
+|===
+
+== Review Submission
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-016 | A questionnaire cannot be submitted for review if it has syntax errors. | UC-N4
+| BR-017 | A questionnaire cannot be submitted for review if required metadata fields are missing. | UC-N4
+| BR-018 | Automated quality checks run on every submission to review. | UC-N4
+| BR-019 | All automated checks must pass for the status to transition to Review. | UC-N4
+|===
+
+== Review Process
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-021 | Only questionnaires in Review status can be reviewed. | UC-TS1
+| BR-022 | Approval, rejection, and change requests require the trained staff member to have viewed the questionnaire. | UC-TS1
+| BR-023 | Change requests and rejections must include written feedback or a reason. | UC-TS1
+| BR-024 | A trained staff member may approve a questionnaire even if an automated check has failed, at their discretion. | UC-TS1
+| BR-025 | Requesting changes transitions the questionnaire back to Draft with feedback attached. | UC-TS1
+|===
+
+== Publishing
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-026 | Only questionnaires in Approved status can be published. | UC-TS5
+| BR-027 | Publishing creates a FHIR Questionnaire resource on the HAPI server. | UC-TS5
+| BR-028 | Publishing generates a patient-facing link. | UC-TS5
+| BR-029 | If FHIR compilation fails at publish time, the questionnaire does not transition to Published. | UC-TS5
+|===
+
+== Retirement
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-030 | Only questionnaires in Published status can be retired. | UC-TS6
+| BR-031 | Retirement preserves all existing QuestionnaireResponse and Observation resources. | UC-TS6
+| BR-032 | Retired questionnaires do not accept new responses. | UC-TS6
+| BR-033 | Retirement requires confirmation. | UC-TS6
+|===
+
+== Dashboard
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-034 | The dashboard shows all questionnaires, not just those created by the current user. | UC-TS7
+| BR-035 | Questionnaires in Review status are visually prioritized (they need action). | UC-TS7
+|===
+
+== Quality Checks
+
+[cols="1,4,1"]
+|===
+| ID | Rule | Source
+
+| BR-036 | Quality check results are read-only. | UC-TS8
+| BR-037 | Failed checks display the affected question, the check name, and a description of the failure. | UC-TS8
+|===

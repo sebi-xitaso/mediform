@@ -1,0 +1,874 @@
+= mediform: Architecture Documentation (arc42)
+:revdate: 2026-05-21
+:version: 0.1.0
+:status: Draft
+:toc: left
+:toclevels: 3
+:sectnums:
+:plantuml-server-url: https://www.plantuml.com/plantuml
+
+== Introduction and Goals
+
+=== Requirements Overview
+
+mediform is a prototype tool for hospital staff to create, manage, and
+distribute FHIR-backed questionnaires through a human-readable,
+AI-generatable DSL format (`.mediform`).
+
+The system serves three user groups:
+
+Patients:: Fill out and review questionnaires via a patient-facing app.
+Nurses:: Create questionnaires by prompting an external LLM, then import, edit, preview, and submit them for review via an employee app.
+Trained Staff:: Review, approve, publish, and retire questionnaires; oversee quality via the employee app.
+
+The core innovation is the `.mediform` format: a markdown-ish DSL that
+is readable by non-technical staff, generatable by LLMs (including FHIR
+metadata like LOINC and SNOMED codes), and compilable to FHIR resources
+at a system boundary.
+
+Full requirements are in `src/docs/specs/prd.adoc`.
+
+=== Quality Goals
+
+[cols="1,3,2"]
+|===
+| Priority | Quality Goal | Scenario
+
+| 1 | Format readability | A nurse with no technical training reads a `.mediform` file and understands what the questionnaire asks within 2 minutes.
+| 2 | AI generatability | An LLM produces a valid, complete `.mediform` file (including FHIR codes) from a natural-language prompt in a single pass.
+| 3 | FHIR compliance | Every published questionnaire compiles to a valid FHIR R4 Questionnaire resource. Every submitted response compiles to a valid QuestionnaireResponse with correct Observations.
+| 4 | Extensibility | A developer adds a new custom question type (e.g., drawing accuracy) by writing a JS function embedded in the format, without modifying the system.
+| 5 | Prototype velocity | A single developer can build and demonstrate the end-to-end flow within weeks, not months.
+|===
+
+=== Stakeholders
+
+[cols="1,2,2"]
+|===
+| Stakeholder | Role | Expectations
+
+| Sebastian | Product owner, developer | Working prototype that proves the format design. Clean architecture that can evolve.
+| Nurses (future) | Primary content creators | Simple, non-technical interface for managing questionnaires.
+| Hospital IT (future) | Operations | FHIR-compliant data that integrates with existing systems.
+| Patients (future) | End users | Clear, mobile-friendly forms.
+|===
+
+'''
+
+== Architecture Constraints
+
+=== Technical Constraints
+
+[cols="1,3"]
+|===
+| Constraint | Rationale
+
+| Runtime: Bun | Modern, fast JS/TS runtime. Chosen for prototype speed and DX.
+| Language: TypeScript (strict) | Type safety, modern ecosystem.
+| Frontend: Svelte | Lightweight, fast, good DX for prototype.
+| Backend: Elysia | Bun-native, type-safe HTTP framework.
+| FHIR Server: HAPI FHIR | Open-source, self-hosted, well-documented FHIR R4 server.
+| Data format: `.mediform` | Custom DSL. The system's core differentiator.
+|===
+
+=== Organizational Constraints
+
+[cols="1,3"]
+|===
+| Constraint | Rationale
+
+| Single developer | Prototype built by one person. Architecture must stay simple.
+| Prototype scope | Corners may be cut if documented. No production-grade auth, error handling, or ops.
+| Documentation over perfection | Every shortcut must be documented where it occurs.
+|===
+
+=== Conventions
+
+[cols="1,3"]
+|===
+| Convention | Standard
+
+| Documentation | Plain English, Strunk & White.
+| Testing | TDD (London or Chicago School as appropriate).
+| Code | DRY, SOLID, KISS, Ubiquitous Language (DDD).
+| Commits | Conventional Commits, reference issue number.
+| Branches | `feature/<issue-number>-<issue-description>`.
+|===
+
+'''
+
+== System Scope and Context
+
+=== Business Context
+
+The system sits between hospital staff (who define questionnaires),
+patients (who fill them out), and a FHIR server (which stores clinical
+data in a standards-compliant format).
+
+[plantuml]
+----
+@startuml
+!include <C4/C4_Context>
+
+title System Context Diagram — mediform
+
+Person(patient, "Patient", "Fills out questionnaires\nvia a link on their device")
+Person(nurse, "Nurse", "Prompts an external LLM,\nimports .mediform files,\nedits and submits for review")
+Person(trained_staff, "Trained Staff", "Reviews, approves, publishes,\nand retires questionnaires")
+Person(llm, "External LLM", "Generates .mediform files\nfrom natural-language prompts")
+
+System(mediform, "mediform", "Parses .mediform format,\nmanages questionnaire lifecycle,\ncompiles to/from FHIR,\nrenders questionnaires")
+
+System_Ext(hapi, "HAPI FHIR Server", "Stores Questionnaire,\nQuestionnaireResponse,\nand Observation resources")
+
+System_Ext(third_party, "Third-Party Analytics", "Consumes FHIR data\nfor clinical analysis")
+
+Rel(patient, mediform, "Fills out questionnaires,\nviews responses", "HTTPS")
+Rel(nurse, llm, "Prompts for\nquestionnaire generation", "External")
+Rel(nurse, mediform, "Imports, edits, previews,\nsubmits questionnaires", "HTTPS")
+Rel(trained_staff, mediform, "Reviews, approves,\npublishes, retires", "HTTPS")
+Rel(mediform, hapi, "CRUD FHIR resources", "FHIR R4 REST API")
+Rel(third_party, hapi, "Reads FHIR data", "FHIR R4 REST API")
+
+@enduml
+----
+
+=== Technical Context
+
+[plantuml]
+----
+@startuml
+!include <C4/C4_Context>
+
+title Technical Context — mediform
+
+System(mediform, "mediform\n(Elysia on Bun)", "REST API + Svelte SPA")
+
+System_Ext(hapi, "HAPI FHIR Server\n(Docker)", "FHIR R4 REST API\nhttp://localhost:8080/fhir")
+
+Rel(mediform, hapi, "FHIR R4 REST", "HTTP/JSON\nGET/POST/PUT Questionnaire,\nQuestionnaireResponse,\nObservation")
+
+note right of mediform
+  Patient App: /patient/*
+  Employee App: /staff/*
+  API: /patient/*, /staff/*
+  All on single Bun process
+end note
+
+@enduml
+----
+
+[cols="1,2,2"]
+|===
+| Channel | Protocol | Notes
+
+| Browser -> mediform | HTTPS (HTTP in dev) | REST API + static SPA assets
+| mediform -> HAPI FHIR | HTTP | FHIR R4 REST API. Localhost in dev.
+| Nurse -> External LLM | Out of band | Not part of the system. Nurse copies output.
+|===
+
+'''
+
+== Solution Strategy
+
+=== Key Design Decisions
+
+[cols="1,3,2"]
+|===
+| Decision | Description | Rationale
+
+| Custom DSL over FHIR JSON
+| Define a markdown-ish `.mediform` format instead of using FHIR Questionnaire JSON directly.
+| FHIR JSON is too verbose and technical for nurses. The DSL is human-first; FHIR is a compilation target.
+
+| Compile at the boundary
+| The `.mediform` format is the source of truth. FHIR resources are generated at publish time and response submission time.
+| Keeps the internal model simple. FHIR complexity is isolated to the compiler.
+
+| AI generates everything
+| The LLM produces the complete `.mediform` file including FHIR codes (LOINC, SNOMED). No enrichment layer.
+| Simplifies the pipeline. The format is designed to be LLM-friendly.
+
+| Custom renderers in iframes
+| Complex question types (e.g., drawing accuracy) are embedded JS that runs in a sandboxed iframe. The renderer's only contract is `onValue(result)`.
+| Separates rendering from semantics. Extensible without modifying the core system. Sandboxing provides safety.
+
+| Single-process monolith
+| One Bun process serves the API, the patient SPA, and the employee SPA.
+| Simplest deployment for a prototype. No orchestration overhead.
+
+| HAPI FHIR for storage
+| All patient data (questionnaires, responses, observations) is stored on HAPI FHIR, not in a local database.
+| Offloads data responsibility. Ensures FHIR compliance. Enables third-party interop.
+
+| Questionnaire metadata in local store
+| Lifecycle state, author, feedback, and `.mediform` source are stored locally (e.g., SQLite or in-memory). FHIR resources are created only at publish/submit time.
+| FHIR is not designed for draft/review workflows. Local storage handles lifecycle; FHIR handles clinical data.
+|===
+
+=== Technology Mapping
+
+[cols="2,2,3"]
+|===
+| Concern | Technology | Notes
+
+| HTTP server | Elysia | Bun-native, type-safe routes, validation via schema.
+| SPA framework | Svelte | Patient app and employee app as Svelte SPAs.
+| `.mediform` parser | Custom TypeScript module | Parses YAML frontmatter + markdown-ish body. No external parser dependency expected.
+| FHIR compiler | Custom TypeScript module | Transforms parsed questionnaire to FHIR R4 JSON.
+| FHIR client | `fetch` (Bun built-in) | Direct HTTP calls to HAPI FHIR REST API. No FHIR client library needed for prototype.
+| Local storage | SQLite via `bun:sqlite` | Questionnaire records, lifecycle state, quality check results. _(Prototype: in-memory SQLite is acceptable.)_
+| Custom renderer sandbox | `<iframe sandbox>` | Browser-side. CSP restricts network access.
+| Quality checks | Custom TypeScript module | Runs syntax, metadata, code-system, and renderer checks.
+|===
+
+'''
+
+== Building Block View
+
+=== Level 1: System Decomposition
+
+[plantuml]
+----
+@startuml
+!include <C4/C4_Container>
+
+title Container Diagram — mediform
+
+Person(patient, "Patient", "")
+Person(nurse, "Nurse", "")
+Person(trained_staff, "Trained Staff", "")
+
+System_Boundary(mediform, "mediform") {
+  Container(patient_spa, "Patient App", "Svelte SPA", "Renders questionnaires,\ncollects responses,\nshows completed responses")
+
+  Container(employee_spa, "Employee App", "Svelte SPA", "Import, edit, preview\nquestionnaires.\nReview dashboard,\nlifecycle management")
+
+  Container(api, "API Server", "Elysia on Bun", "REST API.\nParses .mediform,\ncompiles to FHIR,\nmanages lifecycle,\nruns quality checks")
+
+  ContainerDb(local_db, "Local Store", "SQLite", "Questionnaire records,\n.mediform source,\nlifecycle state,\nquality check results")
+}
+
+System_Ext(hapi, "HAPI FHIR Server", "Stores FHIR resources")
+
+Rel(patient, patient_spa, "Uses", "HTTPS")
+Rel(nurse, employee_spa, "Uses", "HTTPS")
+Rel(trained_staff, employee_spa, "Uses", "HTTPS")
+
+Rel(patient_spa, api, "REST API calls", "JSON/HTTPS")
+Rel(employee_spa, api, "REST API calls", "JSON/HTTPS")
+
+Rel(api, local_db, "Read/write", "bun:sqlite")
+Rel(api, hapi, "FHIR R4 REST", "HTTP/JSON")
+
+@enduml
+----
+
+=== Level 2: API Server Internal Structure
+
+[plantuml]
+----
+@startuml
+!include <C4/C4_Component>
+
+title Component Diagram — API Server
+
+Container_Boundary(api, "API Server (Elysia on Bun)") {
+
+  Component(patient_routes, "Patient Routes", "Elysia routes", "GET /patient/questionnaires/:id\nPOST /patient/questionnaires/:id/responses\nGET /patient/responses/:responseId")
+
+  Component(staff_routes, "Staff Routes", "Elysia routes", "POST /staff/questionnaires/import\nPOST /staff/questionnaires/preview\nPUT /staff/questionnaires/:id\nPOST .../submit\nPOST .../review\nPOST .../publish\nPOST .../retire\nGET /staff/questionnaires\nGET .../quality-checks")
+
+  Component(parser, "Mediform Parser", "TypeScript module", "Parses .mediform DSL\ninto structured AST.\nValidates syntax\nand metadata.")
+
+  Component(compiler, "FHIR Compiler", "TypeScript module", "Compiles parsed\nquestionnaire to\nFHIR Questionnaire.\nCompiles responses to\nQuestionnaireResponse\n+ Observations.")
+
+  Component(quality, "Quality Checker", "TypeScript module", "Runs automated checks:\nsyntax, metadata,\ncode systems,\nrenderer parsing.")
+
+  Component(lifecycle, "Lifecycle Manager", "TypeScript module", "Manages questionnaire\nstatus transitions.\nEnforces business rules\n(BR-004, BR-013,\nBR-021, BR-026, BR-030).")
+
+  Component(fhir_client, "FHIR Client", "TypeScript module", "HTTP client for\nHAPI FHIR server.\nCRUD operations on\nQuestionnaire,\nQuestionnaireResponse,\nObservation.")
+
+  Component(store, "Questionnaire Store", "TypeScript module", "CRUD for local\nquestionnaire records.\nAbstracts SQLite access.")
+}
+
+Rel(patient_routes, parser, "Parse for rendering")
+Rel(patient_routes, compiler, "Compile responses")
+Rel(patient_routes, fhir_client, "Store/retrieve FHIR")
+Rel(patient_routes, store, "Retrieve questionnaire")
+
+Rel(staff_routes, parser, "Parse/validate")
+Rel(staff_routes, compiler, "Compile to FHIR")
+Rel(staff_routes, quality, "Run checks")
+Rel(staff_routes, lifecycle, "Transition status")
+Rel(staff_routes, fhir_client, "Publish/retire on FHIR")
+Rel(staff_routes, store, "CRUD questionnaires")
+
+Rel(lifecycle, store, "Read/update status")
+Rel(quality, parser, "Re-parse for validation")
+
+@enduml
+----
+
+=== Level 2: Patient App Internal Structure
+
+[plantuml]
+----
+@startuml
+!include <C4/C4_Component>
+
+title Component Diagram — Patient App
+
+Container_Boundary(patient_spa, "Patient App (Svelte SPA)") {
+
+  Component(router, "Router", "Svelte", "Routes:\n/q/:id (fill out)\n/r/:responseId (view)")
+
+  Component(form_renderer, "Form Renderer", "Svelte component", "Renders questionnaire\nsections and questions.\nBuilt-in controls for\nstandard types.")
+
+  Component(iframe_host, "Iframe Host", "Svelte component", "Loads custom renderer\nJS in sandboxed iframe.\nCommunicates via\npostMessage.\nReceives onValue calls.")
+
+  Component(api_client, "API Client", "TypeScript module", "Calls Patient API:\nGET questionnaire,\nPOST response,\nGET completed response.")
+
+  Component(response_viewer, "Response Viewer", "Svelte component", "Renders completed\nresponse in read-only\nmode.")
+}
+
+Rel(router, form_renderer, "Fill-out route")
+Rel(router, response_viewer, "View route")
+Rel(form_renderer, iframe_host, "Custom questions")
+Rel(form_renderer, api_client, "Submit response")
+Rel(response_viewer, api_client, "Fetch response")
+
+@enduml
+----
+
+=== Level 2: Employee App Internal Structure
+
+[plantuml]
+----
+@startuml
+!include <C4/C4_Component>
+
+title Component Diagram — Employee App
+
+Container_Boundary(employee_spa, "Employee App (Svelte SPA)") {
+
+  Component(e_router, "Router", "Svelte", "Routes:\n/questionnaires (list/dashboard)\n/questionnaires/:id (edit)\n/questionnaires/import (import)\n/questionnaires/:id/review (review)")
+
+  Component(dashboard, "Dashboard", "Svelte component", "Lists questionnaires\nby status.\nFiltering, sorting.\nPrioritizes Review status.")
+
+  Component(editor, "Source Editor", "Svelte component", "Edits .mediform source.\nInline validation.\nShows reviewer feedback.")
+
+  Component(previewer, "Previewer", "Svelte component", "Renders questionnaire\nas patient would see it.\nReuses Form Renderer\nlogic.")
+
+  Component(importer, "Importer", "Svelte component", "Paste/upload .mediform.\nShows parse results\nand warnings.")
+
+  Component(review_panel, "Review Panel", "Svelte component", "Shows source, preview,\nquality check results.\nApprove/reject/request\nchanges actions.")
+
+  Component(e_api_client, "API Client", "TypeScript module", "Calls Staff API:\nimport, preview, update,\nsubmit, review, publish,\nretire, list, quality checks.")
+}
+
+Rel(e_router, dashboard, "List route")
+Rel(e_router, editor, "Edit route")
+Rel(e_router, importer, "Import route")
+Rel(e_router, review_panel, "Review route")
+Rel(editor, previewer, "Preview action")
+Rel(review_panel, previewer, "Patient preview")
+Rel_R(dashboard, e_api_client, "Fetch list")
+Rel(editor, e_api_client, "Save, submit")
+Rel(importer, e_api_client, "Import")
+Rel(review_panel, e_api_client, "Decision, quality checks")
+
+@enduml
+----
+
+'''
+
+== Runtime View
+
+=== Scenario 1: Patient Fills Out a Questionnaire (UC-P1)
+
+[plantuml]
+----
+@startuml
+title Patient Fills Out Questionnaire
+
+actor Patient
+participant "Patient App" as SPA
+participant "API Server" as API
+participant "Mediform Parser" as Parser
+participant "FHIR Compiler" as Compiler
+participant "FHIR Client" as FHIR
+database "HAPI FHIR" as HAPI
+database "Local Store" as DB
+
+Patient -> SPA: Open questionnaire link\n/q/:id
+SPA -> API: GET /patient/questionnaires/:id
+API -> DB: Retrieve questionnaire record
+DB --> API: QuestionnaireRecord (status=published)
+API -> Parser: Parse .mediform source
+Parser --> API: ParsedQuestionnaire
+API --> SPA: PatientQuestionnaire JSON\n(sections, questions, renderer code)
+
+SPA -> SPA: Render questions\n(built-in controls + iframes)
+Patient -> SPA: Fill in answers
+Patient -> SPA: Submit
+
+SPA -> API: POST /patient/questionnaires/:id/responses\n{answers: [...]}
+API -> DB: Retrieve questionnaire
+API -> API: Validate answers\n(BR-001, BR-002)
+API -> Compiler: Compile responses
+Compiler --> API: QuestionnaireResponse\n+ Observations
+API -> FHIR: POST QuestionnaireResponse
+FHIR -> HAPI: Store
+HAPI --> FHIR: 201 Created
+API -> FHIR: POST Observation (for each)
+FHIR -> HAPI: Store
+HAPI --> FHIR: 201 Created
+API --> SPA: 201 {responseId, responseLink}
+SPA --> Patient: Confirmation
+
+@enduml
+----
+
+=== Scenario 2: Nurse Imports and Submits a Questionnaire (UC-N1, UC-N4)
+
+[plantuml]
+----
+@startuml
+title Nurse Imports and Submits Questionnaire
+
+actor Nurse
+participant "Employee App" as SPA
+participant "API Server" as API
+participant "Mediform Parser" as Parser
+participant "Quality Checker" as QC
+participant "Lifecycle Manager" as LM
+database "Local Store" as DB
+
+== Import ==
+
+Nurse -> SPA: Paste .mediform content
+SPA -> API: POST /staff/questionnaires/import\n{source: "..."}
+API -> Parser: Parse .mediform source
+Parser --> API: ParseResult (valid, warnings)
+API -> DB: Create questionnaire\n(status=draft)
+DB --> API: QuestionnaireRecord
+API --> SPA: 201 {questionnaire, warnings}
+SPA --> Nurse: Show parsed result + warnings
+
+== Submit for Review ==
+
+Nurse -> SPA: Click "Submit for Review"
+SPA -> API: POST /staff/questionnaires/:id/submit
+API -> DB: Retrieve questionnaire
+API -> Parser: Re-parse and validate
+Parser --> API: Valid, no errors
+API -> QC: Run quality checks
+QC -> QC: Check syntax (pass)
+QC -> QC: Check metadata (pass)
+QC -> QC: Check FHIR codes (pass)
+QC -> QC: Check renderers (pass)
+QC --> API: All checks passed
+API -> LM: Transition draft -> review
+LM -> DB: Update status
+API --> SPA: 200 {questionnaire, qualityChecks}
+SPA --> Nurse: Status updated to Review
+
+@enduml
+----
+
+=== Scenario 3: Trained Staff Reviews and Publishes (UC-TS1, UC-TS5)
+
+[plantuml]
+----
+@startuml
+title Review and Publish Questionnaire
+
+actor "Trained Staff" as TS
+participant "Employee App" as SPA
+participant "API Server" as API
+participant "Lifecycle Manager" as LM
+participant "FHIR Compiler" as Compiler
+participant "FHIR Client" as FHIR
+database "HAPI FHIR" as HAPI
+database "Local Store" as DB
+
+== Review ==
+
+TS -> SPA: Open review dashboard
+SPA -> API: GET /staff/questionnaires?status=review
+API -> DB: Query
+API --> SPA: List of review questionnaires
+
+TS -> SPA: Select questionnaire
+SPA -> API: GET /staff/questionnaires/:id/quality-checks
+API --> SPA: QualityCheckResponse
+
+TS -> SPA: Approve
+SPA -> API: POST /staff/questionnaires/:id/review\n{decision: "approve"}
+API -> LM: Transition review -> approved
+LM -> DB: Update status
+API --> SPA: 200 {questionnaire}
+
+== Publish ==
+
+TS -> SPA: Click "Publish"
+SPA -> API: POST /staff/questionnaires/:id/publish
+API -> DB: Retrieve questionnaire (status=approved)
+API -> Compiler: Compile to FHIR Questionnaire
+Compiler --> API: FHIRQuestionnaire
+API -> FHIR: POST Questionnaire
+FHIR -> HAPI: Store
+HAPI --> FHIR: 201 Created
+API -> LM: Transition approved -> published
+LM -> DB: Update status, store patientLink
+API --> SPA: 200 {questionnaire, patientLink}
+SPA --> TS: Show patient link
+
+@enduml
+----
+
+'''
+
+== Deployment View
+
+[plantuml]
+----
+@startuml
+!include <C4/C4_Deployment>
+
+title Deployment Diagram — mediform (Development)
+
+Deployment_Node(dev_machine, "Developer Machine", "Linux/macOS") {
+
+  Deployment_Node(bun_process, "Bun Process", "bun run dev") {
+    Container(api, "API Server", "Elysia", "Serves REST API\n+ static SPA assets")
+    Container(patient_spa, "Patient App", "Svelte SPA", "Static files served\nby Elysia")
+    Container(employee_spa, "Employee App", "Svelte SPA", "Static files served\nby Elysia")
+    ContainerDb(sqlite, "SQLite", "bun:sqlite", "Questionnaire records,\nlifecycle state")
+  }
+
+  Deployment_Node(docker, "Docker", "docker compose") {
+    Container(hapi, "HAPI FHIR Server", "Java / Docker", "FHIR R4 REST API\nPort 8080")
+    ContainerDb(hapi_db, "HAPI Database", "H2 / PostgreSQL", "FHIR resource storage")
+  }
+}
+
+Rel(api, hapi, "FHIR R4 REST", "http://localhost:8080/fhir")
+Rel(api, sqlite, "bun:sqlite", "file or :memory:")
+Rel(hapi, hapi_db, "JDBC", "")
+
+@enduml
+----
+
+=== Infrastructure Decisions
+
+[cols="1,3"]
+|===
+| Decision | Rationale
+
+| Single Bun process serves everything | Simplest possible deployment for a prototype. No reverse proxy, no container orchestration.
+| HAPI FHIR in Docker | Standard deployment method for HAPI. Isolates Java runtime. Easy to start/stop.
+| SQLite for local state | Zero-config, embedded, fast. Sufficient for prototype scale. `bun:sqlite` is built-in.
+| No separate build step for SPAs | Svelte apps are built and their output is served as static files by Elysia. Single `bun run build && bun run start` command.
+|===
+
+_(Prototype shortcut: no CI/CD, no staging environment, no monitoring, no backups.)_
+
+'''
+
+== Cross-cutting Concepts
+
+=== The `.mediform` Format as the Central Abstraction
+
+The `.mediform` format is the system's lingua franca.
+Every major operation flows through it:
+
+[plantuml]
+----
+@startuml
+title .mediform as Central Abstraction
+
+rectangle "External LLM" as LLM
+rectangle ".mediform\nfile" as MF #lightblue
+rectangle "Mediform Parser" as Parser
+rectangle "Parsed AST" as AST
+rectangle "FHIR Compiler" as Compiler
+rectangle "FHIR Resources" as FHIR
+rectangle "Form Renderer" as Renderer
+rectangle "Patient UI" as UI
+
+LLM -right-> MF : generates
+MF -right-> Parser : parses
+Parser -right-> AST : produces
+AST -down-> Compiler : compiles
+Compiler -down-> FHIR : produces
+AST -right-> Renderer : renders
+Renderer -right-> UI : displays
+
+@enduml
+----
+
+The format is:
+
+* The *input* (nurse imports it).
+* The *source of truth* (stored in local DB, editable).
+* The *compilation source* (compiled to FHIR at publish/submit time).
+* The *rendering source* (parsed to produce the patient UI).
+
+=== Questionnaire Lifecycle State Machine
+
+[plantuml]
+----
+@startuml
+title Questionnaire Lifecycle
+
+[*] --> Draft : import / create
+
+Draft --> Draft : edit (save)
+Draft --> Review : submit\n[syntax valid,\nmetadata complete,\nquality checks pass]
+
+Review --> Approved : approve
+Review --> Draft : request changes\n[feedback attached]
+Review --> Rejected : reject\n[reason attached]
+
+Approved --> Published : publish\n[FHIR compilation\nsucceeds]
+
+Published --> Retired : retire\n[confirmation]
+
+Rejected --> [*]
+Retired --> [*]
+
+@enduml
+----
+
+Status transitions are enforced by the Lifecycle Manager component.
+Each transition has preconditions defined by business rules
+(BR-013, BR-016, BR-017, BR-019, BR-021, BR-026, BR-030).
+
+=== Custom Renderer Sandboxing
+
+Custom renderers run in the browser inside a sandboxed `<iframe>`.
+
+[cols="1,3"]
+|===
+| Mechanism | Details
+
+| `<iframe sandbox="allow-scripts">` | No same-origin access, no forms, no popups, no top-level navigation.
+| Communication | `postMessage` between host and iframe. Host sends config; iframe sends `onValue(result)`.
+| Content Security Policy | `script-src 'unsafe-inline'` (renderer code is inline). No external script loading. No `connect-src` (no network access).
+| Value validation | Host validates the received value against the declared `maps-to` type before accepting it.
+|===
+
+[plantuml]
+----
+@startuml
+title Custom Renderer Communication
+
+participant "Form Renderer\n(host page)" as Host
+participant "Sandboxed Iframe\n(renderer)" as Iframe
+
+Host -> Iframe: postMessage({type: "init",\nconfig: {min: 0, max: 100}})
+Iframe -> Iframe: Render UI,\ntrack user interaction
+Iframe -> Host: postMessage({type: "value",\nvalue: 87.5})
+Host -> Host: Validate value\nagainst maps-to type
+Host -> Host: Store answer
+
+@enduml
+----
+
+=== FHIR Resource Mapping
+
+The compiler maps `.mediform` concepts to FHIR R4 resources:
+
+[cols="2,2,2"]
+|===
+| `.mediform` Concept | FHIR Resource | Key Fields
+
+| Questionnaire (frontmatter) | `Questionnaire` | title, description, status, item[]
+| Section (`##` heading) | `Questionnaire.item` (type: group) | text, item[]
+| Question (`#` heading) | `Questionnaire.item` | text, type, code (LOINC), answerOption
+| Answer (patient response) | `QuestionnaireResponse.item` | answer.value[x]
+| Mapped observation | `Observation` | code (LOINC), value[x], status, derivedFrom
+|===
+
+=== Error Handling Strategy
+
+[cols="1,3"]
+|===
+| Layer | Strategy
+
+| `.mediform` parsing | Collect all errors with line numbers. Return them all at once (no fail-fast). Allow partial results for preview.
+| API validation | Return 422 with structured error arrays. Each error identifies the field/question and provides a human-readable message.
+| FHIR server communication | Return 502 on failure. No retry logic in the prototype. Atomicity via FHIR transaction bundles where supported, otherwise sequential with rollback on failure.
+| Custom renderer | Catch errors at the iframe boundary. Display fallback UI. Log errors to console. Never crash the host page.
+|===
+
+_(Prototype shortcut: no structured logging, no error reporting service, no retry/circuit-breaker patterns.)_
+
+=== Data Ownership
+
+[cols="2,3"]
+|===
+| Data | Owner
+
+| `.mediform` source, lifecycle state, quality check results, review feedback | Local Store (SQLite). Owned by mediform.
+| FHIR Questionnaire, QuestionnaireResponse, Observation | HAPI FHIR Server. Owned by the FHIR provider.
+| Patient identity | Not managed by mediform. _(Prototype shortcut: no patient identity management. Responses are anonymous or link-based.)_
+|===
+
+'''
+
+== Architecture Decisions
+
+=== ADR-001: Custom DSL over FHIR Questionnaire JSON
+
+Status:: Accepted
+Context:: FHIR Questionnaire is a comprehensive but verbose JSON format. Nurses cannot read or review it. LLMs can generate it but the output is hard to verify.
+Decision:: Define a custom `.mediform` DSL that is human-readable and compiles to FHIR at a system boundary.
+Consequences:: We must build and maintain a parser and compiler. The format is a new invention that must be documented and tested. But it enables the core value proposition: nurses can read what the AI generated.
+
+=== ADR-002: HAPI FHIR for All Clinical Data Storage
+
+Status:: Accepted
+Context:: We need to store questionnaires, responses, and observations. We could use a local database or a FHIR server.
+Decision:: Store all clinical data on HAPI FHIR. Use a local SQLite database only for lifecycle metadata (draft state, review feedback, etc.).
+Consequences:: Data responsibility is pushed to the FHIR provider. Third-party tools can consume data directly. But we depend on HAPI availability for publish and response submission. Local operations (edit, preview) work without HAPI.
+
+=== ADR-003: Single-Process Monolith
+
+Status:: Accepted
+Context:: The system has two SPAs and an API. We could deploy them separately or together.
+Decision:: Serve everything from a single Bun process. Elysia serves the API and static SPA assets.
+Consequences:: Simplest deployment. No CORS issues. No reverse proxy needed. But no independent scaling of frontend and backend. Acceptable for a prototype.
+
+=== ADR-004: SQLite for Local State
+
+Status:: Accepted
+Context:: Questionnaire lifecycle state, `.mediform` source, and quality check results need persistent storage. FHIR is not designed for draft/review workflows.
+Decision:: Use SQLite via `bun:sqlite` for local state. In-memory mode acceptable for development.
+Consequences:: Zero-config, fast, embedded. No external database dependency. But no concurrent multi-process access (irrelevant for single-process prototype).
+
+=== ADR-005: Iframe Sandboxing for Custom Renderers
+
+Status:: Accepted
+Context:: Custom renderers are arbitrary JS code embedded in `.mediform` files. They must be isolated from the host page and from each other.
+Decision:: Run custom renderers in `<iframe sandbox="allow-scripts">` with restrictive CSP. Communicate via `postMessage`.
+Consequences:: Strong isolation. Renderers cannot access patient data, other questions, or the network. But iframe communication adds complexity and latency. Renderers cannot use the host page's CSS framework.
+
+=== ADR-006: Patient and Employee Apps as a Single Deployment
+
+Status:: Accepted (provisional)
+Context:: The PRD left this undecided. Two separate apps add deployment complexity. A single app with route-based separation is simpler.
+Decision:: Build both as route-separated sections of a single Svelte SPA, served by the same Elysia process. Patient routes under `/patient/`, employee routes under `/staff/`.
+Consequences:: Simplest deployment. Shared code (e.g., form renderer) is easy. But the patient app ships employee code (tree-shaking mitigates this). Acceptable for a prototype. Can be split later if needed.
+
+'''
+
+== Quality Requirements
+
+=== Quality Tree
+
+[plantuml]
+----
+@startuml
+title Quality Tree
+
+rectangle "Quality" as Q {
+  rectangle "Functional\nSuitability" as FS {
+    rectangle "Format\nReadability" as FR
+    rectangle "FHIR\nCompliance" as FC
+  }
+  rectangle "Usability" as U {
+    rectangle "AI\nGeneratability" as AG
+    rectangle "Non-techie\nAccessibility" as NA
+  }
+  rectangle "Maintainability" as M {
+    rectangle "Extensibility" as EX
+    rectangle "Prototype\nVelocity" as PV
+  }
+  rectangle "Security" as S {
+    rectangle "Renderer\nIsolation" as RI
+  }
+}
+
+@enduml
+----
+
+=== Quality Scenarios
+
+[cols="1,1,3,2"]
+|===
+| ID | Quality | Scenario | Metric
+
+| QS-01 | Format readability | A nurse reads a `.mediform` file for a 10-question pain assessment and correctly describes what it asks, without technical training. | Comprehension within 2 minutes.
+| QS-02 | AI generatability | An LLM (GPT-4 class) generates a valid `.mediform` file from the prompt "Create a post-operative pain assessment with 5 questions including a pain scale and body location." | File passes all quality checks on first import.
+| QS-03 | FHIR compliance | A published questionnaire's FHIR Questionnaire resource is validated against the FHIR R4 schema. | Zero validation errors.
+| QS-04 | FHIR compliance | A submitted response's QuestionnaireResponse and Observations are validated against FHIR R4. | Zero validation errors.
+| QS-05 | Extensibility | A developer adds a "drawing accuracy" custom renderer by writing 50 lines of JS in a `.mediform` file. No system code changes. | Renderer works in preview and patient app without system modifications.
+| QS-06 | Renderer isolation | A malicious custom renderer attempts to access `document.cookie`, `localStorage`, and `fetch()`. | All attempts are blocked by the sandbox. No data leaks.
+| QS-07 | Prototype velocity | The end-to-end flow (import -> edit -> preview -> submit -> review -> approve -> publish -> fill out -> view response) works in a demo. | Complete flow demonstrated.
+|===
+
+'''
+
+== Risks and Technical Debt
+
+=== Risks
+
+[cols="1,3,2,2"]
+|===
+| ID | Risk | Probability | Mitigation
+
+| R-01 | The `.mediform` parser becomes complex and buggy as the format evolves. | Medium | Keep the format grammar simple. Write comprehensive parser tests. Consider using a parser generator if complexity grows.
+| R-02 | FHIR compilation produces invalid resources that HAPI rejects. | Medium | Validate compiled resources against FHIR R4 schema before sending to HAPI. Use HAPI's validation endpoint.
+| R-03 | Custom renderer sandboxing has security gaps. | Low | Use strict `sandbox` attribute and CSP. Do not trust renderer output; always validate against declared types. _(Prototype: accept residual risk.)_
+| R-04 | HAPI FHIR server becomes a bottleneck or single point of failure. | Low (prototype) | Local operations (edit, preview) do not depend on HAPI. Only publish and response submission require it.
+| R-05 | The `.mediform` format is too limited for real clinical use. | Medium | Design for extensibility. Document limitations. Gather feedback from clinical users.
+|===
+
+=== Technical Debt
+
+[cols="1,3,2"]
+|===
+| ID | Debt | Documented In
+
+| TD-01 | No authentication or authorization. All endpoints are open. | PRD (Out of Scope), this document (ADR context).
+| TD-02 | No auto-save for patient responses. Closing the browser loses data. | UC-P1 extension 6a.
+| TD-03 | Custom renderers have no read-only replay mode. Completed responses show stored values as plain text. | UC-P2 extension 4a.
+| TD-04 | No retry logic or circuit breaker for HAPI FHIR communication. | Cross-cutting: Error Handling Strategy.
+| TD-05 | No structured logging or error reporting. | Cross-cutting: Error Handling Strategy.
+| TD-06 | No questionnaire versioning. Editing a published questionnaire is not possible; it must be retired and re-created. | PRD (Open Questions).
+| TD-07 | Patient identity is not managed. Responses are anonymous or link-based. | Cross-cutting: Data Ownership.
+| TD-08 | No CI/CD, no automated deployment, no monitoring. | Deployment View.
+| TD-09 | Quality checks are minimal (syntax, metadata, code systems, renderer parsing). No clinical validation. | PRD (Quality Checks).
+| TD-10 | The nurse's questionnaire list may show all questionnaires (no auth-based filtering). | BR-020.
+|===
+
+'''
+
+== Glossary
+
+[cols="1,3"]
+|===
+| Term | Definition
+
+| `.mediform` | The custom DSL file format for defining questionnaires. Human-readable, AI-generatable, compilable to FHIR.
+| AST | Abstract Syntax Tree. The in-memory representation of a parsed `.mediform` file.
+| Compilation | The process of transforming a `.mediform` file (or patient responses) into FHIR resources.
+| Custom renderer | A sandboxed JS function embedded in a `.mediform` file that handles user interaction for a complex question type and produces a value via `onValue()`.
+| Elysia | A Bun-native, type-safe HTTP framework used for the API server.
+| FHIR | Fast Healthcare Interoperability Resources. An interoperability standard for health data (R4 version used).
+| FHIR Compiler | The internal module that transforms parsed `.mediform` structures into FHIR R4 JSON resources.
+| HAPI FHIR | An open-source Java implementation of a FHIR server. Used for storing clinical data.
+| Lifecycle Manager | The internal module that enforces questionnaire status transitions and business rules.
+| LOINC | Logical Observation Identifiers Names and Codes. A standard for identifying medical observations.
+| Mediform Parser | The internal module that parses `.mediform` DSL files into a structured AST.
+| Observation | A FHIR resource representing a clinical measurement or finding. Created from questionnaire answers that have LOINC mappings.
+| Quality Checker | The internal module that runs automated validation checks on questionnaires before review.
+| Questionnaire (FHIR) | A FHIR resource representing a structured set of questions. The compilation target of a `.mediform` file.
+| QuestionnaireResponse (FHIR) | A FHIR resource representing a patient's answers to a questionnaire.
+| Renderer API | The contract between the host page and a custom renderer iframe: `onValue(value)` to report results, `config` for read-only question configuration.
+| SNOMED | Systematized Nomenclature of Medicine. A clinical terminology system used for coding answer options.
+| Svelte | A frontend framework used for the patient and employee SPAs.
+|===

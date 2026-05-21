@@ -1,0 +1,132 @@
+= mediform: Actor-Goal List
+:revdate: 2026-05-21
+:version: 0.1.0
+:status: Draft
+:toc: left
+:toclevels: 2
+:sectnums:
+
+== Overview
+
+This document lists every actor and their goals against the system,
+derived from the PRD (src/docs/specs/prd.adoc).
+
+Each goal is classified by level:
+
+User Goal (U):: The actor goes home happy when this is done.
+Subfunction (S):: A step within a user goal. Extracted only when reused across multiple user goals.
+
+Goals marked _(deferred)_ are out of scope for the prototype but recorded for completeness.
+
+== Actors
+
+=== Patient
+
+A person who receives, fills out, and reviews questionnaires through the patient app.
+
+[cols="1,4,1"]
+|===
+| ID | Goal | Level
+
+| P-1 | Fill out a questionnaire and submit my responses | U
+| P-2 | View a previously completed questionnaire | U
+| P-3 | Open a questionnaire via a link or code | S ^1^
+|===
+
+^1^ Reused: P-3 is the entry point for both P-1 and P-2.
+
+=== Nurse
+
+A hospital staff member who creates and manages questionnaires through the employee app.
+
+[cols="1,4,1"]
+|===
+| ID | Goal | Level
+
+| N-1 | Import a new questionnaire from an AI-generated `.mediform` file | U
+| N-2 | Preview a questionnaire as a patient would see it | U
+| N-3 | Edit a questionnaire (fix text, reorder questions, adjust options) | U
+| N-4 | Submit a questionnaire for review | U
+| N-5 | View the list of my questionnaires and their statuses | U
+| N-6 | Revise a questionnaire after changes were requested | U
+|===
+
+=== Trained Staff
+
+A qualified employee who oversees the questionnaire lifecycle, performs reviews, and monitors quality.
+
+[cols="1,4,1"]
+|===
+| ID | Goal | Level
+
+| TS-1 | Review a questionnaire submitted by a nurse | U
+| TS-2 | Approve a questionnaire | U
+| TS-3 | Reject a questionnaire with feedback | U
+| TS-4 | Request changes to a questionnaire | U
+| TS-5 | Publish an approved questionnaire so patients can access it | U
+| TS-6 | Retire a published questionnaire | U
+| TS-7 | View a dashboard of questionnaires by status | U
+| TS-8 | View automated quality check results for a questionnaire | U
+|===
+
+=== System (Elysia API)
+
+The backend acts on behalf of the organization. These goals are triggered by other actors' actions or by scheduled processes.
+
+[cols="1,4,1"]
+|===
+| ID | Goal | Level
+
+| SYS-1 | Parse a `.mediform` file and validate its syntax | S ^2^
+| SYS-2 | Compile a `.mediform` file into a FHIR Questionnaire resource | S ^2^
+| SYS-3 | Run automated quality checks on a submitted questionnaire | S ^3^
+| SYS-4 | Compile a patient's responses into a FHIR QuestionnaireResponse | S ^4^
+| SYS-5 | Create FHIR Observation resources from mapped response values | S ^4^
+| SYS-6 | Store and retrieve questionnaires and responses via HAPI FHIR | S ^2^
+|===
+
+^2^ Reused across N-1, N-2, N-3, TS-5. +
+^3^ Reused across N-4, TS-1, TS-8. +
+^4^ Reused across P-1.
+
+== Goal Dependency Map
+
+The following shows which subfunctions support which user goals.
+
+....
+P-1  Fill out questionnaire ──────────── SYS-4  Compile responses to FHIR
+  └── P-3  Open via link/code            SYS-5  Create Observations
+                                          SYS-6  Store via HAPI FHIR
+
+P-2  View completed questionnaire
+  └── P-3  Open via link/code
+                                          SYS-6  Store via HAPI FHIR
+
+N-1  Import .mediform ────────────────── SYS-1  Parse and validate
+                                          SYS-2  Compile to FHIR Questionnaire
+                                          SYS-6  Store via HAPI FHIR
+
+N-2  Preview questionnaire ──────────── SYS-1  Parse and validate
+                                          SYS-2  Compile to FHIR Questionnaire
+
+N-4  Submit for review ──────────────── SYS-3  Run automated quality checks
+
+TS-1 Review questionnaire ──────────── SYS-3  Run automated quality checks
+
+TS-5 Publish questionnaire ─────────── SYS-2  Compile to FHIR Questionnaire
+                                          SYS-6  Store via HAPI FHIR
+....
+
+== Deferred Goals (Out of Scope for Prototype)
+
+These goals are implied by the PRD's future vision but excluded from the prototype scope.
+
+[cols="1,4,1"]
+|===
+| ID | Goal | Actor
+
+| D-1 | Prompt an AI within the app to generate a questionnaire | Nurse
+| D-2 | Authenticate and authorize based on role | All
+| D-3 | View an audit trail of questionnaire changes | Trained Staff
+| D-4 | Define conditional branching within a questionnaire | Nurse
+|===

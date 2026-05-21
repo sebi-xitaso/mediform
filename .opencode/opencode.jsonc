@@ -1,0 +1,50 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "git reset": "deny",
+      "git push -f": "deny",
+      "git checkout": "ask"
+    },
+    "external_directory": {
+      "/privte/**": "deny"
+    }
+  },
+  "plugin": ["@sveltejs/opencode"],
+  "mcp": {
+    "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "enabled": true,
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {file:~/.config/opencode/.secrets/github-pat}"
+      }
+    }
+  },
+"provider": {
+    "XITASO": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "XITASO",
+      "options": {
+        "baseURL": "http://10.3.248.178:12345/v1"
+      },
+      "models": {
+        "agent": {
+          "name": "Local Agents",
+          "limit": {
+            "context": 100000,
+            "output": 20000
+          }
+        }
+      }
+    }
+  },
+  "agent": {
+    "build": {
+    },
+    "plan": {
+    }
+  }
+
+}

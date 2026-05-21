@@ -1,0 +1,338 @@
+= mediform: Product Requirements Document
+:author: Sebastian
+:revdate: 2026-05-21
+:version: 0.1.0
+:status: Draft
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Purpose
+
+mediform is a prototype tool that lets hospital staff create, manage, and distribute FHIR-backed questionnaires through a human-readable, AI-generatable format.
+Nurses describe what they need in plain language; an LLM produces a complete questionnaire definition -- including FHIR mappings (LOINC, SNOMED) -- in a custom DSL.
+Patients fill out the rendered questionnaires in a separate app.
+The FHIR server owns all patient data storage and ensures interoperability with third-party systems.
+
+== Problem
+
+Hospital questionnaires today are either paper-based or locked inside proprietary systems.
+Building digital forms that map correctly to clinical standards (LOINC, SNOMED, FHIR) requires specialized knowledge that nurses and most hospital IT staff do not have.
+This creates a bottleneck: clinical staff know what to ask, but cannot produce standards-compliant digital forms without developer involvement.
+
+mediform removes that bottleneck by:
+
+. Defining a low-code format that is readable by non-technical staff.
+. Letting an LLM generate the full format -- including FHIR metadata -- from a natural-language prompt.
+. Compiling the format into FHIR resources at a system boundary, so data is stored and exchangeable in a standards-compliant way.
+. Delegating patient data storage to a FHIR server provider, which handles safety and compliance.
+
+== Scope
+
+This document describes a *prototype*.
+Corners may be cut and features deferred, provided each shortcut is documented in the appropriate place (code comments, architecture docs, or this document).
+
+=== In scope
+
+* The `.mediform` format: design, parsing, and compilation to FHIR.
+* A patient-facing app for rendering and filling out questionnaires.
+* An employee-facing app for prompting, reviewing, editing, and managing questionnaires.
+* Custom question renderers: embedded JS, sandboxed in iframes.
+* A minimal questionnaire lifecycle (statuses, basic quality checks).
+* Integration with a HAPI FHIR server.
+
+=== Out of scope (prototype)
+
+* Conditional/branching logic within questionnaires.
+* Integrated AI generation (nurses use an external LLM and paste the result).
+* Authentication, authorization, and audit trails beyond what HAPI provides.
+* Production-grade error handling and resilience.
+* Localization and accessibility beyond basic usability.
+
+== Users
+
+=== Patients
+
+Patients interact only with the patient app.
+They receive a link or code, open a questionnaire, fill it in, and submit.
+They may also view previously completed questionnaires.
+
+.Needs
+* Simple, clear interface.
+* Works on mobile.
+* No login friction (for the prototype, link-based access is acceptable).
+
+=== Nurses
+
+Nurses use the employee app to create and manage questionnaires.
+They prompt an external LLM with a description of what they need, paste the generated `.mediform` file into the app, review it, and publish it.
+
+.Needs
+* Ability to read and understand the `.mediform` format without technical training.
+* Preview of the rendered questionnaire before publishing.
+* Basic editing of the format (fix typos, reorder questions, adjust options).
+
+=== Trained Staff
+
+Trained staff oversee the questionnaire lifecycle in the employee app.
+They review questionnaires created by nurses, approve or reject them, and monitor quality.
+
+.Needs
+* Dashboard of questionnaires by status.
+* Ability to approve, reject, or request changes.
+* View of automated quality check results.
+
+== The `.mediform` Format
+
+The format is the core innovation of the project.
+It is a single-file, markdown-ish DSL that describes a questionnaire in a way that is:
+
+* *Human-readable*: a nurse can read it and understand what the questionnaire asks.
+* *AI-generatable*: an LLM can produce a complete, valid file from a natural-language prompt.
+* *FHIR-mappable*: the file contains enough metadata to compile into FHIR Questionnaire and QuestionnaireResponse resources with proper coding.
+* *Extensible*: custom question types can be defined with embedded JS renderers.
+
+=== Design Principles
+
+Conceptually human-first, technically compiled to FHIR::
+The format reads like a document, not like a data structure.
+FHIR metadata (LOINC codes, SNOMED codes, type mappings) is present but visually distinct from question content.
+At a system boundary, the format compiles into FHIR resources.
+
+The AI handles FHIR complexity::
+The LLM produces the complete format including all FHIR codes.
+There is no enrichment or post-processing layer.
+The nurse reviews the result but does not need to understand the codes.
+
+Renderers produce values, the format owns semantics::
+A custom renderer's contract is to call `onValue(result)` with a value of the type declared in the format.
+The renderer handles interaction and presentation logic (including computation like accuracy scoring).
+The format handles meaning: what the value represents, where it maps in FHIR, which code system applies.
+
+Single file::
+One `.mediform` file per questionnaire, including any embedded custom renderer code.
+
+=== Format Structure (Sketch)
+
+The following is an indicative sketch, not a final specification.
+A separate format specification document will define the grammar precisely.
+
+[source]
+----
+---
+title: Post-Operative Pain Assessment
+description: Standard pain evaluation 24h after surgery
+version: 1.0
+status: draft
+---
+
+# Pain Location
+
+Where do you feel pain?
+
+- type: choice
+- required: true
+- options:
+  - Head | SNOMED:25064002
+  - Chest | SNOMED:51185008
+  - Abdomen | SNOMED:818983003
+- maps-to: Coding
+- loinc: 72514-3
+
+# Pain Intensity
+
+How would you rate your pain on a scale of 0-10?
+
+- type: scale
+- min: 0
+- max: 10
+- step: 1
+- required: true
+- maps-to: integer
+- loinc: 72514-3
+
+## Motor Assessment
+
+# Pain Pattern Tracing
+
+Trace the pattern shown on screen as accurately as you can.
+
+- type: custom
+- maps-to: decimal
+- loinc: 72514-3
+- unit: "%"
+- renderer: ```js
+  export default function({ onValue }) {
+    const canvas = document.createElement('canvas');
+    // ... rendering and accuracy computation ...
+    onValue(87.5);
+  }
+  ```
+----
+
+Key observations:
+
+* YAML frontmatter for questionnaire-level metadata.
+* Markdown headings for sections (`##`) and questions (`#`).
+* Prose below a heading is the question description (supports markdown rendering).
+* Dash-prefixed lines are metadata properties, visually distinct from prose.
+* Custom renderers are embedded JS code blocks.
+* FHIR codes sit inline but are recognizable as "system stuff."
+
+=== Value Types
+
+Value types match FHIR answer types.
+The prototype starts with what is needed and expands pragmatically.
+Expected initial set:
+
+[cols="1,2"]
+|===
+| Type | FHIR Equivalent
+
+| `boolean` | boolean
+| `integer` | integer
+| `decimal` | decimal
+| `string` | string
+| `date` | date
+| `Coding` | Coding (coded answer with system reference)
+| `Quantity` | Quantity (value + unit)
+|===
+
+=== Custom Renderers
+
+Custom renderers are embedded JS functions that run inside a sandboxed iframe.
+They receive a minimal API and must produce a value matching the declared `maps-to` type.
+
+.Renderer contract
+[source,typescript]
+----
+interface RendererAPI {
+  /** Report the produced value back to the host. */
+  onValue(value: unknown): void;
+
+  /** Read-only configuration from the format (min, max, options, etc.). */
+  config: Record<string, unknown>;
+}
+----
+
+Renderers must not:
+
+* Access or modify FHIR mappings.
+* Communicate with external services.
+* Access data from other questions.
+
+Renderers may:
+
+* Create arbitrary DOM elements.
+* Track user interaction (mouse, touch, keyboard).
+* Perform computation to derive a value (e.g., accuracy percentage from a drawing exercise).
+
+== Questionnaire Lifecycle
+
+The lifecycle is kept minimal for the prototype.
+
+[plantuml]
+----
+@startuml
+[*] --> Draft
+Draft --> Review : submit
+Review --> Approved : approve
+Review --> Draft : request changes
+Approved --> Published : publish
+Published --> Retired : retire
+@enduml
+----
+
+Draft:: Nurse creates or edits the questionnaire. Not visible to patients.
+Review:: Trained staff reviews the questionnaire. Automated quality checks run.
+Approved:: Questionnaire passed review. Ready to publish.
+Published:: Visible to patients. Responses are collected.
+Retired:: No longer accepting responses. Historical data preserved.
+
+=== Quality Checks (Prototype)
+
+Automated checks (run on submit to review):
+
+* Format is syntactically valid.
+* All required metadata fields are present.
+* FHIR codes reference known code systems.
+* Custom renderers parse without syntax errors.
+
+Manual checks (performed by trained staff):
+
+* Clinical correctness of questions.
+* Appropriateness of FHIR mappings.
+
+NOTE: Quality checks are intentionally minimal.
+A production system would require clinical validation workflows, versioning, and audit trails.
+
+== Architecture Overview
+
+=== Tech Stack
+
+[cols="1,2"]
+|===
+| Component | Technology
+
+| Runtime | Bun
+| Language | TypeScript (modern, strict)
+| Frontend | Svelte
+| Backend | Elysia
+| FHIR Server | HAPI FHIR (self-hosted)
+| Data Format | `.mediform` (custom DSL)
+|===
+
+=== System Boundaries
+
+[source]
+----
++------------------+       +------------------+       +------------------+
+|                  |       |                  |       |                  |
+|   Patient App    +------>+   Elysia API     +------>+   HAPI FHIR      |
+|   (Svelte)       |       |                  |       |   Server         |
++------------------+       |   - parses       |       |                  |
+                           |     .mediform    |       |   - stores       |
++------------------+       |   - compiles     |       |     Questionnaire|
+|                  |       |     to FHIR      |       |     Response     |
+|   Employee App   +------>+   - manages      |       |     Observation  |
+|   (Svelte)       |       |     lifecycle    |       |                  |
++------------------+       +------------------+       +------------------+
+----
+
+The Elysia API is the compilation boundary.
+It parses `.mediform` files, compiles them to FHIR Questionnaire resources, and stores them on the HAPI server.
+When a patient submits a response, the API compiles it into a FHIR QuestionnaireResponse (and, where mapped, Observation resources).
+
+=== App Deployment
+
+Whether the patient app and employee app are separate deployments or a single app with role-based views is undecided.
+For the prototype, the simpler option should be chosen and the decision documented.
+
+== Non-Functional Requirements
+
+Prototype-grade:: Performance, scalability, and reliability requirements are relaxed. The system must work on a single developer machine.
+Documentation over perfection:: Every shortcut, stub, or deferred decision must be documented where it occurs.
+Modern tooling:: Use new, promising libraries where they add value. Use proven ones as a foundation.
+
+== Open Questions
+
+. What is the precise grammar of the `.mediform` format? (To be defined in a separate format specification.)
+. Single app or two apps for patient vs. employee?
+. How should the format handle versioning of questionnaires?
+. What is the iframe sandboxing model for custom renderers? (CSP, allowed APIs, size constraints.)
+. How are patients linked to questionnaires? (Link-based, code-based, or FHIR Patient reference?)
+
+== Glossary
+
+[cols="1,3"]
+|===
+| Term | Definition
+
+| `.mediform` | The custom DSL file format for defining questionnaires.
+| FHIR | Fast Healthcare Interoperability Resources. An interoperability standard for health data.
+| HAPI FHIR | An open-source FHIR server implementation in Java.
+| LOINC | Logical Observation Identifiers Names and Codes. A standard for identifying medical observations.
+| SNOMED | Systematized Nomenclature of Medicine. A clinical terminology system.
+| Renderer | A sandboxed JS function that handles user interaction for a single question and produces a value.
+| Compilation | The process of transforming a `.mediform` file into FHIR resources.
+|===

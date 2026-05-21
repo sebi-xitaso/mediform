@@ -1,0 +1,582 @@
+= ATAM Review: mediform Architecture
+:revdate: 2026-05-21
+:version: 0.1.0
+:status: Complete
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Review Summary
+
+[cols="1,3"]
+|===
+| Subject | mediform architecture (src/docs/arc42/architecture.adoc)
+| Method | Architecture Tradeoff Analysis Method (ATAM)
+| Date | 2026-05-21
+| Reviewers | Architecture review (automated)
+| Scope | All quality attributes from the architecture's quality goals (QG-1 through QG-5) and quality scenarios (QS-01 through QS-07)
+| Input documents | PRD, Actor-Goal List, Persona Use Cases, System Use Cases, Business Rules, arc42 Architecture
+|===
+
+=== Verdict
+
+The architecture is *fit for its stated purpose as a prototype*.
+It makes strong, well-reasoned decisions for the core innovation (the `.mediform` format and its compilation pipeline) and accepts appropriate shortcuts elsewhere.
+
+The review identified *4 risks*, *6 sensitivity points*, *5 tradeoff points*, and *8 non-risks*.
+Two findings require action before implementation begins; the rest are acceptable for a prototype with documented debt.
+
+'''
+
+== Quality Attribute Utility Tree
+
+The following tree restates the architecture's quality goals, refined into concrete scenarios with priority (H/M/L for importance) and difficulty (H/M/L for architectural difficulty).
+
+[cols="2,3,1,1"]
+|===
+| Quality Attribute | Scenario | Importance | Difficulty
+
+| *QG-1: Format readability*
+| QS-01: Nurse comprehends a 10-question `.mediform` file within 2 minutes.
+| H | M
+
+| *QG-2: AI generatability*
+| QS-02: LLM generates a valid `.mediform` file that passes all quality checks on first import.
+| H | H
+
+| *QG-3: FHIR compliance*
+| QS-03: Published questionnaire compiles to a valid FHIR R4 Questionnaire (zero validation errors).
+| H | H
+
+| *QG-3: FHIR compliance*
+| QS-04: Submitted response compiles to valid QuestionnaireResponse + Observations.
+| H | H
+
+| *QG-4: Extensibility*
+| QS-05: Developer adds a custom renderer (50 lines JS) without system code changes.
+| H | M
+
+| *QG-4: Extensibility (security)*
+| QS-06: Malicious renderer cannot access cookies, localStorage, or network.
+| M | M
+
+| *QG-5: Prototype velocity*
+| QS-07: End-to-end flow demonstrated in a single demo.
+| H | L
+|===
+
+'''
+
+== Architectural Approaches Analyzed
+
+The review examines six architectural approaches (corresponding to ADR-001 through ADR-006) against the quality attributes above.
+
+=== AA-1: Custom `.mediform` DSL with Parser and Compiler (ADR-001)
+
+This is the central architectural decision.
+The system defines a custom markdown-ish DSL instead of using FHIR Questionnaire JSON.
+A parser converts the DSL to an AST; a compiler converts the AST to FHIR resources.
+
+==== Analysis
+
+[cols="2,3"]
+|===
+| Quality Attribute | Effect
+
+| Format readability (QG-1)
+| *Strongly positive.* The DSL is designed to be human-first. Markdown headings, prose descriptions, and visually distinct metadata lines make the format scannable by non-technical staff. This is the primary reason for the decision.
+
+| AI generatability (QG-2)
+| *Positive with caveats.* The format is simpler than FHIR JSON, which should make it easier for LLMs to generate. However, the format is *novel* — no LLM has been trained on `.mediform` files. The LLM must learn the format from a prompt or system message. This is a sensitivity point (see SP-01).
+
+| FHIR compliance (QG-3)
+| *Neutral to negative.* Introducing a custom format adds a compilation step that can produce invalid FHIR. The compiler is a new, untested component. Every FHIR mapping rule must be implemented and tested. This is a risk (see RISK-01).
+
+| Extensibility (QG-4)
+| *Positive.* The format supports embedded custom renderers. New question types do not require parser changes (the `custom` type is generic). But extending the *metadata vocabulary* (new properties, new value types) requires parser changes.
+
+| Prototype velocity (QG-5)
+| *Negative.* Building a parser and compiler from scratch is significant effort. This is the single largest implementation task. It is a tradeoff: the format is the core value proposition, so the effort is justified, but it competes with velocity.
+|===
+
+==== Findings
+
+[[SP-01]]
+*SP-01 (Sensitivity Point): LLM prompt engineering for a novel format.*::
+The `.mediform` format does not exist in any LLM's training data.
+The quality of AI-generated files depends entirely on the prompt or system message that teaches the LLM the format.
++
+*Implication:* A well-crafted reference prompt (or few-shot examples) is as important as the format grammar itself.
+The architecture does not address how the LLM learns the format.
++
+*Recommendation:* Create a `.mediform` format specification document with examples, and a reference LLM prompt, as first-class deliverables alongside the parser. Test AI generatability early with multiple LLMs.
+
+[[RISK-01]]
+*RISK-01 (Risk): FHIR compiler correctness.*::
+The compiler maps `.mediform` concepts to FHIR R4 resources.
+FHIR is a complex standard with many constraints (required fields, value set bindings, reference integrity).
+A hand-written compiler is likely to produce subtly invalid resources, especially for edge cases (Coding with system URIs, Quantity with UCUM units, Observation references).
++
+*Probability:* High.
+*Impact:* HAPI rejects the resource, or worse, accepts it but third-party tools cannot interpret it.
++
+*Mitigation:* Validate every compiled resource against the FHIR R4 schema *before* sending it to HAPI. Use HAPI's `$validate` operation. Write compiler tests against known-good FHIR examples. Consider using an existing FHIR resource builder library (e.g., `fhir-kit-client` or manual JSON construction with a validation step) rather than assembling JSON by hand.
+
+[[TP-01]]
+*TP-01 (Tradeoff Point): Format simplicity vs. FHIR expressiveness.*::
+The `.mediform` format deliberately simplifies FHIR.
+This helps readability (QG-1) and generatability (QG-2) but limits what can be expressed.
+For example, the current sketch has no way to express:
++
+* Multiple LOINC codes per question (FHIR allows multiple `code` entries).
+* Answer value sets bound to external terminology servers.
+* Nested question groups (FHIR items can nest arbitrarily).
+* `enableWhen` conditional logic (explicitly deferred).
++
+*Implication:* The format will need to evolve. Each addition increases parser complexity and reduces readability. This tension is inherent and permanent.
++
+*Recommendation:* Document the format's current limitations explicitly. Design the parser to be extensible (e.g., unknown metadata properties are preserved as pass-through rather than rejected). Accept that the format will never cover 100% of FHIR Questionnaire.
+
+'''
+
+=== AA-2: HAPI FHIR for Clinical Data, SQLite for Lifecycle (ADR-002, ADR-004)
+
+The architecture splits storage: HAPI FHIR owns clinical data (Questionnaire, QuestionnaireResponse, Observation); SQLite owns lifecycle metadata (draft state, `.mediform` source, review feedback, quality check results).
+
+==== Analysis
+
+[cols="2,3"]
+|===
+| Quality Attribute | Effect
+
+| FHIR compliance (QG-3)
+| *Strongly positive.* Clinical data is stored natively in FHIR. Third-party tools can consume it directly. No translation layer for reads.
+
+| Prototype velocity (QG-5)
+| *Positive.* SQLite via `bun:sqlite` is zero-config. HAPI FHIR in Docker is a single `docker compose up`. No custom database schema design for clinical data.
+
+| Format readability (QG-1)
+| *Neutral.* Storage choice does not affect format readability.
+
+| Extensibility (QG-4)
+| *Positive.* Adding new FHIR resource types (e.g., `Condition`, `CarePlan`) requires only compiler changes, not storage schema changes.
+|===
+
+==== Findings
+
+[[SP-02]]
+*SP-02 (Sensitivity Point): Data consistency between SQLite and HAPI.*::
+The system stores the `.mediform` source in SQLite and the compiled FHIR Questionnaire in HAPI.
+These two representations can diverge:
++
+* If the `.mediform` source is edited after publishing, the SQLite version differs from the HAPI version.
+* If HAPI is unavailable during publish, the SQLite status may be inconsistent.
++
+The architecture addresses the first case (editing is blocked for non-Draft questionnaires, BR-013) and the second case (publish fails atomically if HAPI is unreachable, BR-029).
++
+*Implication:* The current design handles these cases correctly. But there is no mechanism to *detect* drift if it occurs due to a bug or manual HAPI intervention.
++
+*Recommendation:* For the prototype, accept this risk. Document that SQLite is the authoritative source for lifecycle state, and HAPI is the authoritative source for clinical data. If drift is suspected, re-publish from the `.mediform` source.
+
+[[NR-01]]
+*NR-01 (Non-Risk): SQLite as a single-process bottleneck.*::
+SQLite does not support concurrent write access from multiple processes.
+This is a non-risk because the architecture uses a single Bun process (ADR-003).
+
+[[NR-02]]
+*NR-02 (Non-Risk): HAPI FHIR availability for local operations.*::
+Edit, preview, and quality checks do not require HAPI.
+Only publish and response submission depend on HAPI.
+This is a well-designed degradation boundary.
+
+'''
+
+=== AA-3: Single-Process Monolith (ADR-003)
+
+Everything runs in one Bun process: API server, patient SPA assets, employee SPA assets.
+
+==== Analysis
+
+[cols="2,3"]
+|===
+| Quality Attribute | Effect
+
+| Prototype velocity (QG-5)
+| *Strongly positive.* No deployment orchestration, no CORS configuration, no reverse proxy. Single command to start.
+
+| Extensibility (QG-4)
+| *Slightly negative.* Splitting into separate services later requires extracting shared code and defining API contracts. But the component diagram already shows clean internal boundaries, which mitigates this.
+
+| All others
+| *Neutral.* The monolith does not affect format readability, AI generatability, or FHIR compliance.
+|===
+
+==== Findings
+
+[[NR-03]]
+*NR-03 (Non-Risk): Monolith scalability.*::
+The system runs on a single developer machine.
+Scalability is explicitly out of scope.
+The monolith is appropriate.
+
+[[NR-04]]
+*NR-04 (Non-Risk): Patient app ships employee code.*::
+ADR-006 notes that the single SPA deployment means the patient app bundle includes employee code.
+Tree-shaking mitigates this.
+For a prototype, the bundle size impact is negligible.
+
+'''
+
+=== AA-4: Iframe Sandboxing for Custom Renderers (ADR-005)
+
+Custom renderers are arbitrary JS embedded in `.mediform` files, executed in `<iframe sandbox="allow-scripts">` with restrictive CSP.
+
+==== Analysis
+
+[cols="2,3"]
+|===
+| Quality Attribute | Effect
+
+| Extensibility (QG-4)
+| *Strongly positive.* Any JS code can run inside the iframe. New question types require no system changes. The `onValue()` contract is minimal and stable.
+
+| Extensibility — security (QS-06)
+| *Positive with caveats.* The sandbox blocks same-origin access, forms, popups, and navigation. CSP blocks external scripts and network access. But see RISK-02.
+
+| Format readability (QG-1)
+| *Slightly negative.* Embedded JS code blocks in a `.mediform` file reduce readability for non-technical users. The code is visually distinct (fenced code block), but a nurse cannot understand it. This is acceptable because the nurse does not need to understand the renderer — only the question title, description, and value type.
+
+| Prototype velocity (QG-5)
+| *Slightly negative.* Iframe communication via `postMessage` requires careful implementation (origin checking, message typing, error handling). This is moderate effort.
+|===
+
+==== Findings
+
+[[RISK-02]]
+*RISK-02 (Risk): Iframe sandbox escape via `allow-scripts`.*::
+The `sandbox="allow-scripts"` attribute allows JS execution but blocks most other capabilities.
+However, `allow-scripts` combined with `allow-same-origin` would allow the iframe to remove its own sandbox.
+The architecture correctly omits `allow-same-origin`.
++
+Residual risks:
++
+* The renderer can consume CPU/memory without limit (no resource quotas on iframes).
+* The renderer can create visual overlays that obscure the host page (clickjacking within the iframe boundary).
+* If the iframe's `srcdoc` is constructed by string interpolation of renderer code, injection attacks are possible.
++
+*Probability:* Low (the `.mediform` file is reviewed by a nurse and trained staff before publishing).
+*Impact:* Medium (DoS via CPU, confusing UI, but no data exfiltration).
++
+*Mitigation:* Construct `srcdoc` using a fixed HTML template with the renderer code inserted into a `<script>` tag, not interpolated into HTML. Add a timeout: if the renderer does not call `onValue()` within N seconds, display a fallback. Document that renderers are trusted code reviewed during the Q&A process.
+
+[[SP-03]]
+*SP-03 (Sensitivity Point): Renderer code size in `.mediform` files.*::
+Complex renderers (e.g., a canvas-based drawing exercise) may be hundreds of lines of JS.
+This degrades format readability (QG-1) significantly.
++
+*Implication:* The "single file" constraint (one `.mediform` file per questionnaire) creates tension between extensibility and readability for complex renderers.
++
+*Recommendation:* For the prototype, accept this. Document that complex renderers reduce readability. In the future, consider allowing renderer code to be referenced by URL or extracted into a separate file within a bundle.
+
+[[TP-02]]
+*TP-02 (Tradeoff Point): Renderer isolation vs. renderer capability.*::
+The sandbox prevents renderers from accessing the host page's CSS framework, design tokens, or shared UI components.
+Every renderer must be self-contained, including its own styles.
+This ensures isolation (QS-06) but means renderers cannot match the host app's look and feel without duplicating styles.
++
+*Recommendation:* For the prototype, accept visual inconsistency between built-in controls and custom renderers. In the future, consider injecting a base stylesheet into the iframe via `srcdoc`.
+
+'''
+
+=== AA-5: Compile-at-the-Boundary Strategy
+
+The `.mediform` format is the source of truth.
+FHIR resources are generated only at two points: publish (Questionnaire) and response submission (QuestionnaireResponse + Observations).
+
+==== Analysis
+
+[cols="2,3"]
+|===
+| Quality Attribute | Effect
+
+| FHIR compliance (QG-3)
+| *Positive.* FHIR compilation happens in one place (the FHIR Compiler component). All FHIR-specific logic is concentrated, not scattered.
+
+| Prototype velocity (QG-5)
+| *Positive.* The internal model is the parsed AST, which is simpler than FHIR. Most operations (edit, preview, quality checks) work on the AST without touching FHIR.
+
+| Format readability (QG-1)
+| *Positive.* The format does not need to be valid FHIR. It can use simpler syntax (e.g., `loinc: 72514-3` instead of a full FHIR `code` object with system URI).
+|===
+
+==== Findings
+
+[[SP-04]]
+*SP-04 (Sensitivity Point): Late FHIR compilation failure.*::
+FHIR compilation happens at publish time, which is late in the lifecycle.
+A questionnaire can pass all quality checks (syntax, metadata, code systems, renderer parsing) during submission to review, be approved by trained staff, and then *fail FHIR compilation at publish time*.
++
+The architecture handles this (SUC-12: publish returns 422 if compilation fails, BR-029).
+But the user experience is poor: trained staff approved a questionnaire that cannot be published.
++
+*Implication:* Quality checks during submission (SUC-07) do not include a full FHIR compilation trial.
++
+*Recommendation:* Add a "trial compilation" step to the quality checks run during submission to review. This catches FHIR compilation errors before the questionnaire reaches trained staff. The cost is one additional compilation per submission, which is within the 1000ms budget (NFR-11) given the 100ms compilation budget (NFR-15).
+
+[[TP-03]]
+*TP-03 (Tradeoff Point): Re-parsing on every read.*::
+The architecture parses the `.mediform` source on every GET request for a published questionnaire (SUC-01, step 5-6).
+This is simple (no cached compiled form) but adds latency.
++
+The 100ms parse budget (NFR-14) fits within the 500ms response budget (NFR-01), so this is acceptable.
+But if questionnaires grow large or parse complexity increases, this becomes a bottleneck.
++
+*Recommendation:* For the prototype, parse on every read. If performance becomes an issue, cache the parsed AST alongside the `.mediform` source in SQLite.
+
+'''
+
+=== AA-6: Single SPA with Route-Based Separation (ADR-006)
+
+Patient and employee functionality are served as a single Svelte SPA with route-based separation (`/patient/*` vs. `/staff/*`).
+
+==== Analysis
+
+[cols="2,3"]
+|===
+| Quality Attribute | Effect
+
+| Prototype velocity (QG-5)
+| *Strongly positive.* Shared code (Form Renderer, Iframe Host) is trivially reusable. Single build pipeline.
+
+| Extensibility (QG-4)
+| *Slightly negative.* Splitting into separate apps later requires build pipeline changes. But the component diagram shows clean separation, which mitigates this.
+|===
+
+==== Findings
+
+[[NR-05]]
+*NR-05 (Non-Risk): Security of route-based separation.*::
+Without authentication (TD-01), any user can access any route.
+A patient could navigate to `/staff/` and see the employee app.
+This is a known, documented prototype shortcut.
+It is a non-risk *for the prototype* but would be a critical risk in production.
+
+[[TP-04]]
+*TP-04 (Tradeoff Point): Shared Form Renderer between patient and employee apps.*::
+The Previewer component in the employee app reuses the Form Renderer from the patient app (BR-012: preview renders identically to the patient app).
+This is a strong design choice that ensures preview fidelity.
+But it means changes to the Form Renderer affect both apps simultaneously.
++
+*Recommendation:* This is the correct tradeoff. Shared rendering ensures consistency. Test the Form Renderer thoroughly since it is on the critical path for both user groups.
+
+'''
+
+== Consolidated Findings
+
+=== Risks
+
+[cols="1,3,1,3"]
+|===
+| ID | Description | Severity | Recommendation
+
+| RISK-01
+| FHIR compiler produces subtly invalid resources. HAPI may accept them, but third-party tools cannot interpret them.
+| High
+| Validate every compiled resource against FHIR R4 schema before sending to HAPI. Write compiler tests against known-good FHIR examples. Consider using HAPI's `$validate` operation.
+
+| RISK-02
+| Iframe sandbox allows unbounded CPU/memory consumption by renderers. Malicious or buggy renderers can DoS the browser tab.
+| Medium
+| Add a timeout for `onValue()`. Construct `srcdoc` from a fixed template (no string interpolation). Document that renderers are trusted code reviewed during Q&A.
+
+| [[RISK-03]] RISK-03
+| The `.mediform` format grammar is not formally specified. The parser is the only definition of the format. If the parser has bugs, the "correct" format is ambiguous.
+| Medium
+| Write a formal format specification (grammar + semantics) before or alongside the parser. Use the specification as the test oracle.
+
+| [[RISK-04]] RISK-04
+| Response submission atomicity (BR-005) relies on sequential FHIR REST calls. If the second call fails (e.g., Observation creation after QuestionnaireResponse), partial data exists on HAPI.
+| Medium
+| Use FHIR transaction bundles (`POST /` with `Bundle.type = transaction`) to submit QuestionnaireResponse and Observations atomically. HAPI supports this.
+|===
+
+=== Sensitivity Points
+
+[cols="1,3,3"]
+|===
+| ID | Description | Implication
+
+| SP-01
+| LLM prompt engineering for a novel format.
+| AI generatability (QG-2) depends on prompt quality, not just format design. A reference prompt is a first-class deliverable.
+
+| SP-02
+| Data consistency between SQLite and HAPI.
+| Drift is possible if bugs or manual intervention occur. SQLite is authoritative for lifecycle; HAPI for clinical data.
+
+| SP-03
+| Renderer code size in `.mediform` files.
+| Complex renderers degrade format readability (QG-1). Tension between single-file constraint and readability.
+
+| SP-04
+| Late FHIR compilation failure at publish time.
+| A questionnaire can pass review but fail to publish. Add trial compilation to quality checks.
+
+| [[SP-05]] SP-05
+| Parser error quality determines nurse experience.
+| If parse errors are cryptic (line numbers without context), nurses cannot fix AI-generated files. Error messages must be human-readable.
+
+| [[SP-06]] SP-06
+| Quality check coverage determines review trust.
+| If quality checks miss issues that trained staff must catch manually, the review process becomes a bottleneck. Checks should catch as much as possible automatically.
+|===
+
+=== Tradeoff Points
+
+[cols="1,3,3"]
+|===
+| ID | Tradeoff | Resolution
+
+| TP-01
+| Format simplicity (QG-1, QG-2) vs. FHIR expressiveness (QG-3).
+| Accept limited FHIR coverage. Document limitations. Design parser for extensibility.
+
+| TP-02
+| Renderer isolation (QS-06) vs. renderer visual consistency.
+| Accept visual inconsistency for prototype. Consider injecting base stylesheet later.
+
+| TP-03
+| Re-parsing on every read (simplicity) vs. caching (performance).
+| Parse on every read for prototype. Cache if performance becomes an issue.
+
+| TP-04
+| Shared Form Renderer (consistency) vs. independent evolution.
+| Share the renderer. Test it thoroughly.
+
+| [[TP-05]] TP-05
+| Prototype velocity (QG-5) vs. all other quality attributes.
+| The prototype explicitly prioritizes velocity. Every shortcut is documented as technical debt. This is the correct approach for a prototype, but the debt must be tracked.
+|===
+
+=== Non-Risks
+
+[cols="1,3"]
+|===
+| ID | Description
+
+| NR-01 | SQLite single-process bottleneck. Non-risk because of single-process architecture (ADR-003).
+| NR-02 | HAPI availability for local operations. Non-risk because edit/preview/quality checks do not depend on HAPI.
+| NR-03 | Monolith scalability. Non-risk because scalability is out of scope.
+| NR-04 | Patient app ships employee code. Non-risk because bundle size is negligible for prototype.
+| NR-05 | Route-based separation without auth. Non-risk for prototype; documented as TD-01.
+| [[NR-06]] NR-06 | Elysia and Bun maturity. Both are newer technologies, but the prototype's requirements are basic (REST API, static file serving, SQLite). No advanced features are needed.
+| [[NR-07]] NR-07 | Svelte for SPAs. Svelte is well-proven for the complexity level required (forms, lists, editors). No risk.
+| [[NR-08]] NR-08 | HAPI FHIR for storage. HAPI is the most widely used open-source FHIR server. Well-documented, actively maintained. No risk for prototype use.
+|===
+
+'''
+
+== Recommendations
+
+=== Must-Do Before Implementation
+
+[cols="1,4,2"]
+|===
+| Priority | Recommendation | Addresses
+
+| 1
+| *Write a formal `.mediform` format specification* with grammar rules, field definitions, and examples. Use it as the test oracle for the parser. Without this, the parser *is* the specification, and bugs become "features."
+| RISK-03, SP-01, SP-05
+
+| 2
+| *Add trial FHIR compilation to quality checks.* When a questionnaire is submitted for review (SUC-07), run a trial compilation to FHIR. Report compilation errors as quality check failures. This prevents the "approved but unpublishable" scenario.
+| SP-04, RISK-01
+|===
+
+=== Should-Do During Implementation
+
+[cols="1,4,2"]
+|===
+| Priority | Recommendation | Addresses
+
+| 3
+| *Use FHIR transaction bundles for response submission.* Submit QuestionnaireResponse and Observations as a single FHIR transaction bundle to guarantee atomicity (BR-005). HAPI supports this natively.
+| RISK-04
+
+| 4
+| *Validate compiled FHIR resources against the R4 schema* before sending to HAPI. Use HAPI's `$validate` operation or a client-side FHIR validator.
+| RISK-01
+
+| 5
+| *Create a reference LLM prompt* (or system message) that teaches the `.mediform` format with examples. Test it with at least two LLMs (e.g., GPT-4, Claude). Iterate on the prompt until QS-02 passes.
+| SP-01
+
+| 6
+| *Add a renderer timeout.* If a custom renderer does not call `onValue()` within 30 seconds, display a fallback and mark the question as unanswered.
+| RISK-02
+
+| 7
+| *Construct iframe `srcdoc` from a fixed HTML template.* Do not interpolate renderer code into HTML via string concatenation. Use a template with a `<script>` tag placeholder.
+| RISK-02
+|===
+
+=== Consider for Later
+
+[cols="1,4,2"]
+|===
+| Priority | Recommendation | Addresses
+
+| 8
+| Consider allowing renderer code to be referenced by URL or extracted into a companion file, to reduce `.mediform` file size for complex renderers.
+| SP-03, TP-01
+
+| 9
+| Consider injecting a base stylesheet into renderer iframes to improve visual consistency.
+| TP-02
+
+| 10
+| Consider caching the parsed AST in SQLite alongside the `.mediform` source to avoid re-parsing on every read.
+| TP-03
+|===
+
+'''
+
+== Quality Attribute Coverage Matrix
+
+This matrix shows how each architectural approach contributes to each quality goal.
+Cells are marked: *++* (strongly positive), *+* (positive), *0* (neutral), *-* (negative), *--* (strongly negative).
+
+[cols="3,1,1,1,1,1"]
+|===
+| Architectural Approach | QG-1 Readability | QG-2 AI Gen | QG-3 FHIR | QG-4 Extensibility | QG-5 Velocity
+
+| AA-1: Custom DSL + Parser/Compiler | ++ | + | 0 | + | -
+| AA-2: HAPI + SQLite split storage | 0 | 0 | ++ | + | +
+| AA-3: Single-process monolith | 0 | 0 | 0 | 0 | ++
+| AA-4: Iframe sandboxing | - | 0 | 0 | ++ | -
+| AA-5: Compile at the boundary | + | 0 | + | 0 | +
+| AA-6: Single SPA, route separation | 0 | 0 | 0 | 0 | ++
+|===
+
+*Observations:*
+
+* *QG-1 (Readability)* is well-served by the DSL decision (AA-1) and the compile-at-boundary strategy (AA-5). The only negative is embedded renderer code (AA-4), which is acceptable.
+* *QG-2 (AI Generatability)* is supported by the simpler DSL (AA-1) but depends heavily on prompt engineering (SP-01), which is outside the architecture.
+* *QG-3 (FHIR Compliance)* is the area of highest risk. The split storage (AA-2) and boundary compilation (AA-5) are positive, but the compiler itself (AA-1) is the weak link. Recommendations 2 and 4 address this.
+* *QG-4 (Extensibility)* is well-served by iframe sandboxing (AA-4) and the generic `custom` type in the DSL (AA-1).
+* *QG-5 (Velocity)* benefits from the monolith (AA-3), single SPA (AA-6), and SQLite (AA-2). The DSL parser/compiler (AA-1) and iframe communication (AA-4) are the main velocity costs, but they are essential for the core value proposition.
+
+'''
+
+== Conclusion
+
+The mediform architecture makes sound decisions for a prototype.
+The central bet — a custom DSL that compiles to FHIR — is well-motivated and well-structured.
+The component decomposition (parser, compiler, lifecycle manager, quality checker, FHIR client, store) provides clean separation of concerns that will support evolution.
+
+The two highest-priority recommendations are:
+
+. *Write the format specification before the parser.* The format is the product. It deserves a specification that is independent of the implementation.
+. *Add trial FHIR compilation to quality checks.* This closes a gap where a questionnaire can be approved but fail to publish.
+
+All other findings are either acceptable for a prototype (with documented debt) or addressable during implementation without architectural changes.
