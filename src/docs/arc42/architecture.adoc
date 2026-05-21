@@ -342,6 +342,20 @@ Established in issue #10. The `apps/api/src/` directory follows a routes / servi
 | `src/__tests__/` | Integration tests using `app.handle(new Request(...))` — exercises the full Elysia request/response cycle in-process without binding a real network socket.
 |===
 
+=== Level 2: Patient App Physical Module Layout
+
+Established in issue #11. The `apps/patient/src/` directory:
+
+[cols="1,3"]
+|===
+| Path | Role
+
+| `src/main.ts` | Entry point. Calls Svelte 5 `mount(App, { target: #app })`.
+| `src/App.svelte` | Root component. Smoke-test page in scaffolding; will host the router in #21.
+| `index.html` | Vite entry HTML. Loads `src/main.ts` as an ES module.
+| `vite.config.ts` | Vite config: svelte plugin + dev proxy (`/health`, `/patient` → `http://localhost:3000`).
+|===
+
 === Level 2: Patient App Internal Structure
 
 [plantuml]
@@ -372,6 +386,20 @@ Rel(response_viewer, api_client, "Fetch response")
 
 @enduml
 ----
+
+=== Level 2: Employee App Physical Module Layout
+
+Established in issue #11. The `apps/employee/src/` directory mirrors the patient app layout:
+
+[cols="1,3"]
+|===
+| Path | Role
+
+| `src/main.ts` | Entry point. Calls Svelte 5 `mount(App, { target: #app })`.
+| `src/App.svelte` | Root component. Smoke-test page in scaffolding; will host the router in #30/#32.
+| `index.html` | Vite entry HTML. Loads `src/main.ts` as an ES module.
+| `vite.config.ts` | Vite config: svelte plugin + dev proxy (`/health`, `/staff` → `http://localhost:3000`).
+|===
 
 === Level 2: Employee App Internal Structure
 
