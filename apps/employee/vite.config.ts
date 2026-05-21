@@ -1,0 +1,12 @@
+import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+
+export default defineConfig({
+  plugins: [svelte()],
+  server: {
+    proxy: {
+      "/health": "http://localhost:3000",
+      "/staff": "http://localhost:3000",
+    },
+  },
+});
