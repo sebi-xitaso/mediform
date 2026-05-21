@@ -272,7 +272,7 @@ The repository is a Bun workspace monorepo. The four packages and their dependen
 |===
 | Package name | Path | Role | Depends on
 
-| `mediform-core` | `packages/mediform-core` | Shared domain types, parser interfaces, FHIR compiler interfaces. The ubiquitous language of the domain. | (none)
+| `mediform-core` | `packages/mediform-core` | Shared domain types, parser interfaces, FHIR compiler interfaces, and domain services (e.g. `StatusTransitionService`, `QuestionnaireStore` interface). The ubiquitous language of the domain. | (none)
 | `api` | `apps/api` | Elysia HTTP server. Hosts all REST endpoints (SUC-01 through SUC-14). | `mediform-core`
 | `patient` | `apps/patient` | Svelte SPA for patients. Routes `/q/:id` and `/r/:responseId`. | `mediform-core`
 | `employee` | `apps/employee` | Svelte SPA for nurses and trained staff. Routes under `/staff/*`. | `mediform-core`
