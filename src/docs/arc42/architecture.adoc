@@ -64,7 +64,7 @@ Full requirements are in `src/docs/specs/prd.adoc`.
 | Constraint | Rationale
 
 | Runtime: Bun | Modern, fast JS/TS runtime. Chosen for prototype speed and DX.
-| Language: TypeScript (strict) | Type safety, modern ecosystem.
+| Language: TypeScript (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes) | Type safety, modern ecosystem. The extra flags catch array-index and optional-property bugs at compile time.
 | Frontend: Svelte | Lightweight, fast, good DX for prototype.
 | Backend: Elysia | Bun-native, type-safe HTTP framework.
 | FHIR Server: HAPI FHIR | Open-source, self-hosted, well-documented FHIR R4 server.
@@ -149,10 +149,10 @@ System_Ext(hapi, "HAPI FHIR Server\n(Docker)", "FHIR R4 REST API\nhttp://localho
 Rel(mediform, hapi, "FHIR R4 REST", "HTTP/JSON\nGET/POST/PUT Questionnaire,\nQuestionnaireResponse,\nObservation")
 
 note right of mediform
-  Patient App: /patient/*
-  Employee App: /staff/*
-  API: /patient/*, /staff/*
-  All on single Bun process
+  Patient App (apps/patient): served as static files at /patient/*
+  Employee App (apps/employee): served as static files at /staff/*
+  API (apps/api): REST endpoints at /patient/*, /staff/*
+  All on single Bun process; two separate Svelte SPA bundles (see ADR-006)
 end note
 
 @enduml
@@ -213,9 +213,9 @@ end note
 | Concern | Technology | Notes
 
 | HTTP server | Elysia | Bun-native, type-safe routes, validation via schema.
-| SPA framework | Svelte | Patient app and employee app as Svelte SPAs.
-| `.mediform` parser | Custom TypeScript module | Parses YAML frontmatter + markdown-ish body. No external parser dependency expected.
-| FHIR compiler | Custom TypeScript module | Transforms parsed questionnaire to FHIR R4 JSON.
+| SPA framework | Svelte | Two separate Svelte SPAs: `apps/patient` and `apps/employee`. Each built with Vite; served as static files by Elysia.
+| `.mediform` parser | Custom TypeScript module | Parses YAML frontmatter + markdown-ish body. No external parser dependency expected. Shared types live in `packages/mediform-core`.
+| FHIR compiler | Custom TypeScript module | Transforms parsed questionnaire to FHIR R4 JSON. Shared types live in `packages/mediform-core`.
 | FHIR client | `fetch` (Bun built-in) | Direct HTTP calls to HAPI FHIR REST API. No FHIR client library needed for prototype.
 | Local storage | SQLite via `bun:sqlite` | Questionnaire records, lifecycle state, quality check results. _(Prototype: in-memory SQLite is acceptable.)_
 | Custom renderer sandbox | `<iframe sandbox>` | Browser-side. CSP restricts network access.
@@ -263,6 +263,23 @@ Rel(api, hapi, "FHIR R4 REST", "HTTP/JSON")
 
 @enduml
 ----
+
+=== Level 0: Monorepo Package Layout
+
+The repository is a Bun workspace monorepo. The four packages and their dependency graph are:
+
+[cols="1,2,3,2"]
+|===
+| Package name | Path | Role | Depends on
+
+| `mediform-core` | `packages/mediform-core` | Shared domain types, parser interfaces, FHIR compiler interfaces. The ubiquitous language of the domain. | (none)
+| `api` | `apps/api` | Elysia HTTP server. Hosts all REST endpoints (SUC-01 through SUC-14). | `mediform-core`
+| `patient` | `apps/patient` | Svelte SPA for patients. Routes `/q/:id` and `/r/:responseId`. | `mediform-core`
+| `employee` | `apps/employee` | Svelte SPA for nurses and trained staff. Routes under `/staff/*`. | `mediform-core`
+|===
+
+`mediform-core` is the only cross-cutting shared package.
+`api`, `patient`, and `employee` do not depend on each other.
 
 === Level 2: API Server Internal Structure
 
@@ -756,12 +773,12 @@ Context:: Custom renderers are arbitrary JS code embedded in `.mediform` files. 
 Decision:: Run custom renderers in `<iframe sandbox="allow-scripts">` with restrictive CSP. Communicate via `postMessage`.
 Consequences:: Strong isolation. Renderers cannot access patient data, other questions, or the network. But iframe communication adds complexity and latency. Renderers cannot use the host page's CSS framework.
 
-=== ADR-006: Patient and Employee Apps as a Single Deployment
+=== ADR-006: Patient and Employee Apps as Two Separate Svelte SPAs
 
-Status:: Accepted (provisional)
-Context:: The PRD left this undecided. Two separate apps add deployment complexity. A single app with route-based separation is simpler.
-Decision:: Build both as route-separated sections of a single Svelte SPA, served by the same Elysia process. Patient routes under `/patient/`, employee routes under `/staff/`.
-Consequences:: Simplest deployment. Shared code (e.g., form renderer) is easy. But the patient app ships employee code (tree-shaking mitigates this). Acceptable for a prototype. Can be split later if needed.
+Status:: Accepted (supersedes provisional "single SPA" decision; resolved in issue #9)
+Context:: The PRD left the single-app vs. two-app question open. Two separate apps add a small amount of build complexity but keep the patient bundle free of employee code without relying on tree-shaking. A single route-split SPA would ship employee code to patients.
+Decision:: Build `apps/patient` and `apps/employee` as two separate Svelte SPA packages, each with its own Vite build. Both are served as static files by the Elysia API server (`apps/api`). Patient routes are served under `/patient/`, employee routes under `/staff/`.
+Consequences:: Clean bundle separation — patients never download employee code. Slightly more build configuration (two `vite build` invocations). Shared logic lives in `packages/mediform-core` and is tree-shaken per app. Acceptable for a prototype; the two-app structure also maps naturally to a future split deployment if needed.
 
 '''
 
