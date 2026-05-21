@@ -327,6 +327,21 @@ Rel(quality, parser, "Re-parse for validation")
 @enduml
 ----
 
+=== Level 2: API Server Physical Module Layout
+
+Established in issue #10. The `apps/api/src/` directory follows a routes / services / adapters layering:
+
+[cols="1,3"]
+|===
+| Path | Role
+
+| `src/index.ts` | Thin bootstrap. Creates the Elysia app, registers route plugins, calls `app.listen()`. Exports `app` for in-process testing.
+| `src/routes/` | One Elysia plugin file per route group (e.g., `health.ts`). Each file exports a named `Elysia` instance; `index.ts` composes them with `.use()`.
+| `src/services/` | Domain service interfaces and implementations. Placeholder until domain stories are implemented.
+| `src/adapters/fhir/` | FHIR client adapter. Placeholder until #45 (HAPI FHIR client wrapper).
+| `src/__tests__/` | Integration tests using `app.handle(new Request(...))` — exercises the full Elysia request/response cycle in-process without binding a real network socket.
+|===
+
 === Level 2: Patient App Internal Structure
 
 [plantuml]
@@ -779,6 +794,13 @@ Status:: Accepted (supersedes provisional "single SPA" decision; resolved in iss
 Context:: The PRD left the single-app vs. two-app question open. Two separate apps add a small amount of build complexity but keep the patient bundle free of employee code without relying on tree-shaking. A single route-split SPA would ship employee code to patients.
 Decision:: Build `apps/patient` and `apps/employee` as two separate Svelte SPA packages, each with its own Vite build. Both are served as static files by the Elysia API server (`apps/api`). Patient routes are served under `/patient/`, employee routes under `/staff/`.
 Consequences:: Clean bundle separation — patients never download employee code. Slightly more build configuration (two `vite build` invocations). Shared logic lives in `packages/mediform-core` and is tree-shaken per app. Acceptable for a prototype; the two-app structure also maps naturally to a future split deployment if needed.
+
+=== ADR-007: API Module Structure — Routes / Services / Adapters
+
+Status:: Accepted (issue #10)
+Context:: The Elysia API server needs a clear internal structure from the start so that the 14 system use cases can be added incrementally without creating a monolithic `index.ts`.
+Decision:: `index.ts` is a thin bootstrap that only creates the app, registers route plugins, and starts the listener. Routes live in `src/routes/` as Elysia plugin files. Business logic goes in `src/services/`. External-system adapters (FHIR client, SQLite store) go in `src/adapters/<system>/`. Integration tests use `app.handle(new Request(...))` — no real HTTP port needed.
+Consequences:: Clear separation of concerns from the first commit. New route groups and services can be added without touching the bootstrap. `app.handle()` keeps tests fast and portable. The placeholder directories (`services/`, `adapters/fhir/`) signal the intended structure to contributors before the implementations exist.
 
 '''
 
