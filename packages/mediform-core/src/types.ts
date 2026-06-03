@@ -210,3 +210,70 @@ export interface MetadataWarning {
   field: string;
   message: string;
 }
+
+// ---------------------------------------------------------------------------
+// Questionnaire list item (SUC-08 output)
+// ---------------------------------------------------------------------------
+
+export interface QuestionnaireListItem {
+  id: string;
+  title: string;
+  status: QuestionnaireStatus;
+  author: string;
+  lastModified: string;
+  hasReviewFeedback: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Review decision (SUC-09 input)
+// ---------------------------------------------------------------------------
+
+export type ReviewDecision = "approve" | "request_changes" | "reject";
+
+// ---------------------------------------------------------------------------
+// Answer / response types (SUC-11)
+// ---------------------------------------------------------------------------
+
+export interface Answer {
+  questionId: string;
+  value: unknown;
+}
+
+export interface FHIRQuestionnaireResponseItem {
+  linkId: string;
+  answer?: { value: unknown }[];
+}
+
+export interface FHIRQuestionnaireResponse {
+  resourceType: "QuestionnaireResponse";
+  id?: string;
+  questionnaire?: string;   // canonical reference, e.g. "Questionnaire/<fhirId>"
+  status: "completed";
+  authored: string;         // ISO 8601
+  item: FHIRQuestionnaireResponseItem[];
+}
+
+export interface FHIRObservation {
+  resourceType: "Observation";
+  status: "final";
+  code: { coding: FHIRCoding[] };
+  valueBoolean?: boolean;
+  valueInteger?: number;
+  valueDecimal?: number;
+  valueString?: string;
+  valueDate?: string;
+  valueCoding?: FHIRCoding;
+  valueQuantity?: { value: number; unit?: string };
+  derivedFrom?: { reference: string }[];
+}
+
+export interface CompileResponseError {
+  questionId: string;
+  message: string;
+}
+
+export interface CompileResponseResult {
+  questionnaireResponse: FHIRQuestionnaireResponse;
+  observations: FHIRObservation[];
+  errors: CompileResponseError[];
+}
