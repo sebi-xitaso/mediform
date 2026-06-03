@@ -7,9 +7,9 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import type {
+	QualityCheckResponse,
 	QuestionnaireRecord,
 	QuestionnaireStatus,
-	QualityCheckResponse,
 } from "mediform-core";
 import type { CreateRecordInput, UpdateSourceInput } from "./store.js";
 
@@ -229,7 +229,10 @@ export class SqliteQuestionnaireRepository implements QuestionnaireRepository {
 		this.db.exec("DELETE FROM quality_checks");
 	}
 
-	saveQualityCheck(questionnaireId: string, result: QualityCheckResponse): void {
+	saveQualityCheck(
+		questionnaireId: string,
+		result: QualityCheckResponse,
+	): void {
 		this.db
 			.prepare(
 				`INSERT INTO quality_checks (questionnaire_id, checked_at, passed, results_json)

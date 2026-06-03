@@ -10,10 +10,10 @@ import type { ParsedQuestionnaire, ParseError } from "mediform-core";
 import {
 	DEFAULT_CHECKS,
 	metadataCompleteCheck,
-	runQualityChecks,
-	syntaxValidCheck,
 	type QualityCheck,
 	type QualityCheckInput,
+	runQualityChecks,
+	syntaxValidCheck,
 } from "../quality-check.js";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +32,9 @@ function makeQuestion(id: string, title: string, loinc?: string) {
 	};
 }
 
-function makeParsed(questions: ReturnType<typeof makeQuestion>[]): ParsedQuestionnaire {
+function makeParsed(
+	questions: ReturnType<typeof makeQuestion>[],
+): ParsedQuestionnaire {
 	return {
 		frontmatter: {
 			title: "Test",
@@ -159,12 +161,13 @@ describe("runQualityChecks", () => {
 	it("supports pluggable custom checks", () => {
 		const alwaysFail: QualityCheck = {
 			name: "custom_fail",
-			run: () => ({ name: "custom_fail", status: "failed", details: "Always fails" }),
+			run: () => ({
+				name: "custom_fail",
+				status: "failed",
+				details: "Always fails",
+			}),
 		};
-		const response = runQualityChecks(
-			{ parseErrors: noErrors },
-			[alwaysFail],
-		);
+		const response = runQualityChecks({ parseErrors: noErrors }, [alwaysFail]);
 		expect(response.passed).toBe(false);
 		expect(response.results[0].name).toBe("custom_fail");
 	});

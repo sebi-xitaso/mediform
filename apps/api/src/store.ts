@@ -7,7 +7,11 @@
  * Traceability: ADR-009, #67.
  */
 
-import type { QuestionnaireRecord, QuestionnaireStatus, QualityCheckResponse } from "mediform-core";
+import type {
+	QualityCheckResponse,
+	QuestionnaireRecord,
+	QuestionnaireStatus,
+} from "mediform-core";
 import { SqliteQuestionnaireRepository } from "./repository.js";
 
 // ---------------------------------------------------------------------------

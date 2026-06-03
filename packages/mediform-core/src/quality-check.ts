@@ -11,7 +11,11 @@
  * Traceability: issue #50, SUC-14, BR-016, BR-017, BR-018.
  */
 
-import type { MetadataWarning, ParsedQuestionnaire, ParseError } from "./types.js";
+import type {
+	MetadataWarning,
+	ParsedQuestionnaire,
+	ParseError,
+} from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -134,7 +138,9 @@ export function runQualityChecks(
 	checks: QualityCheck[] = DEFAULT_CHECKS,
 ): QualityCheckResponse {
 	const results = checks.map((c) => c.run(input));
-	const passed = results.every((r) => r.status === "passed" || r.status === "warning");
+	const passed = results.every(
+		(r) => r.status === "passed" || r.status === "warning",
+	);
 	return {
 		checkedAt: new Date().toISOString(),
 		passed,

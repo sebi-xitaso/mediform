@@ -24,8 +24,8 @@ import { parseMediform, runQualityChecks } from "mediform-core";
 import { toPatientQuestionnaire } from "../patient-view.js";
 import {
 	createRecord,
-	getRecord,
 	getQualityCheck,
+	getRecord,
 	listRecords,
 	saveQualityCheck,
 	updateSource,

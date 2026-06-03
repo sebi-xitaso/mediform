@@ -9,8 +9,7 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import { Elysia } from "elysia";
-import type { QuestionnaireRecord } from "mediform-core";
-import type { QualityCheckResponse } from "mediform-core";
+import type { QualityCheckResponse, QuestionnaireRecord } from "mediform-core";
 import { staffRoutes } from "../routes/staff.js";
 import { _clearStore, createRecord, updateStatus } from "../store.js";
 
@@ -85,7 +84,9 @@ describe("POST /staff/questionnaires/:id/submit", () => {
 			qualityCheck: QualityCheckResponse;
 		};
 		expect(body.qualityCheck.passed).toBe(true);
-		expect(body.qualityCheck.results.map((x) => x.name)).toContain("syntax_valid");
+		expect(body.qualityCheck.results.map((x) => x.name)).toContain(
+			"syntax_valid",
+		);
 	});
 
 	it("allows submit when LOINC codes are missing (warning only, BR-017)", async () => {
@@ -141,7 +142,10 @@ describe("POST /staff/questionnaires/:id/submit", () => {
 	it("persists quality-check results (#53)", async () => {
 		const r = createRecord({ title: "Pain", source: VALID_SOURCE });
 		await req("POST", `/staff/questionnaires/${r.id}/submit`);
-		const qcRes = await req("GET", `/staff/questionnaires/${r.id}/quality-check`);
+		const qcRes = await req(
+			"GET",
+			`/staff/questionnaires/${r.id}/quality-check`,
+		);
 		expect(qcRes.status).toBe(200);
 		const qc = (await qcRes.json()) as QualityCheckResponse;
 		expect(qc.checkedAt).toBeTruthy();
@@ -170,7 +174,10 @@ describe("GET /staff/questionnaires/:id/quality-check", () => {
 	});
 
 	it("returns 404 for an unknown questionnaire", async () => {
-		const res = await req("GET", "/staff/questionnaires/no-such-id/quality-check");
+		const res = await req(
+			"GET",
+			"/staff/questionnaires/no-such-id/quality-check",
+		);
 		expect(res.status).toBe(404);
 	});
 });
