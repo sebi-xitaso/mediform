@@ -14,6 +14,29 @@
 - Branches: feature/<issue-number>-<issue-description>
 - Use github mcp server for all request regarding github
 
+## Where to Start
+
+The backlog is tracked on GitHub Issues with MoSCoW priorities and dependency cross-references.
+
+**Next up — foundation stories (unblock everything else):**
+- #65 Set up Biome for linting and formatting
+- #67 SQLite with repository pattern (replace in-memory store)
+- #68 Eden Treaty type-safe API client for both SPAs
+- #66 Pre-push hook (depends on #65)
+- #12 Local HAPI FHIR via docker-compose
+
+**Then — backend endpoints (need #67):**
+- #28 POST submit for review (SUC-07)
+- #37 POST publish (SUC-12)
+- #38 POST retire (SUC-13)
+- #19 POST submit response (SUC-02), #20 GET completed response (SUC-03)
+
+**Then — UI (need #68):**
+- #30–#35 Employee app stories
+- #21–#24 Patient app stories
+
+Stories labeled `open-decision` require an architecture decision before implementation — read the referenced ADR or PRD section first.
+
 You are able to use the Svelte MCP server, where you have access to comprehensive Svelte 5 and SvelteKit documentation. Here's how to use the available tools effectively:
 
 ## Available Svelte MCP Tools:

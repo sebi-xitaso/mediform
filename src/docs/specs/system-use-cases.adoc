@@ -21,6 +21,7 @@ Requirements within each use case use EARS syntax
 
 Base URL:: All API paths are relative to the Elysia server root.
 Content type:: All request and response bodies are `application/json` unless stated otherwise.
+API client:: Both Svelte SPAs use Eden Treaty to consume the Elysia API with end-to-end type safety. The TypeScript interfaces in this document describe the wire format; Eden Treaty derives equivalent types from the Elysia route definitions at build time.
 IDs:: Questionnaire IDs are opaque strings (UUIDs). Response IDs are opaque strings.
 Auth:: _(Prototype shortcut: no authentication. All endpoints are open. See PRD, Out of Scope.)_
 

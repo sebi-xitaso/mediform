@@ -67,6 +67,8 @@ Full requirements are in `src/docs/specs/prd.adoc`.
 | Language: TypeScript (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes) | Type safety, modern ecosystem. The extra flags catch array-index and optional-property bugs at compile time.
 | Frontend: Svelte | Lightweight, fast, good DX for prototype.
 | Backend: Elysia | Bun-native, type-safe HTTP framework.
+| API Client: Eden Treaty | Derives a type-safe client from Elysia route definitions. Used by both Svelte SPAs.
+| Linter/Formatter: Biome | Fast, single-tool replacement for ESLint + Prettier. Single root config.
 | FHIR Server: HAPI FHIR | Open-source, self-hosted, well-documented FHIR R4 server.
 | Data format: `.mediform` | Custom DSL. The system's core differentiator.
 |===
@@ -93,6 +95,8 @@ Full requirements are in `src/docs/specs/prd.adoc`.
 | Code | DRY, SOLID, KISS, Ubiquitous Language (DDD).
 | Commits | Conventional Commits, reference issue number.
 | Branches | `feature/<issue-number>-<issue-description>`.
+| Linting/Formatting | Biome, single `biome.json` at workspace root. Enforced by pre-push hook.
+| Pre-push hook | Shell script (or lefthook) runs `biome check` on changed files before push.
 |===
 
 '''
@@ -202,8 +206,12 @@ end note
 | Offloads data responsibility. Ensures FHIR compliance. Enables third-party interop.
 
 | Questionnaire metadata in local store
-| Lifecycle state, author, feedback, and `.mediform` source are stored locally (e.g., SQLite or in-memory). FHIR resources are created only at publish/submit time.
-| FHIR is not designed for draft/review workflows. Local storage handles lifecycle; FHIR handles clinical data.
+| Lifecycle state, author, feedback, and `.mediform` source are stored in SQLite via a repository pattern. FHIR resources are created only at publish/submit time.
+| FHIR is not designed for draft/review workflows. Local storage handles lifecycle; FHIR handles clinical data. The repository pattern enables file-based SQLite for dev and in-memory SQLite for tests.
+
+| Type-safe API client via Eden Treaty
+| Both Svelte SPAs consume the Elysia API through Eden Treaty, which derives a fully typed client from the server's route definitions.
+| Eliminates manual type duplication between backend and frontend. Catches API contract mismatches at compile time.
 |===
 
 === Technology Mapping
@@ -213,11 +221,14 @@ end note
 | Concern | Technology | Notes
 
 | HTTP server | Elysia | Bun-native, type-safe routes, validation via schema.
+| API client | Eden Treaty | Both Svelte SPAs derive a type-safe client from Elysia route definitions. Replaces manual `fetch` wrappers. See ADR-007.
 | SPA framework | Svelte | Two separate Svelte SPAs: `apps/patient` and `apps/employee`. Each built with Vite; served as static files by Elysia.
 | `.mediform` parser | Custom TypeScript module | Parses YAML frontmatter + markdown-ish body. No external parser dependency expected. Shared types live in `packages/mediform-core`.
 | FHIR compiler | Custom TypeScript module | Transforms parsed questionnaire to FHIR R4 JSON. Shared types live in `packages/mediform-core`.
 | FHIR client | `fetch` (Bun built-in) | Direct HTTP calls to HAPI FHIR REST API. No FHIR client library needed for prototype.
-| Local storage | SQLite via `bun:sqlite` | Questionnaire records, lifecycle state, quality check results. _(Prototype: in-memory SQLite is acceptable.)_
+| Local storage | SQLite via `bun:sqlite` | Questionnaire records, lifecycle state, quality check results. Repository pattern abstracts storage; file-based for dev, `:memory:` for tests. See ADR-009.
+| Linter/Formatter | Biome | Single `biome.json` at workspace root. Replaces ESLint + Prettier. See ADR-008.
+| Code quality gate | Pre-push hook | Shell script runs Biome lint and format checks on changed files. See ADR-010.
 | Custom renderer sandbox | `<iframe sandbox>` | Browser-side. CSP restricts network access.
 | Quality checks | Custom TypeScript module | Runs syntax, metadata, code-system, and renderer checks.
 |===
@@ -306,7 +317,7 @@ Container_Boundary(api, "API Server (Elysia on Bun)") {
 
   Component(fhir_client, "FHIR Client", "TypeScript module", "HTTP client for\nHAPI FHIR server.\nCRUD operations on\nQuestionnaire,\nQuestionnaireResponse,\nObservation.")
 
-  Component(store, "Questionnaire Store", "TypeScript module", "CRUD for local\nquestionnaire records.\nAbstracts SQLite access.")
+  Component(store, "Questionnaire Store", "TypeScript module", "CRUD for local\nquestionnaire records.\nRepository pattern over\nbun:sqlite.\nFile DB for dev,\n:memory: for tests.")
 }
 
 Rel(patient_routes, parser, "Parse for rendering")
@@ -344,7 +355,7 @@ Container_Boundary(patient_spa, "Patient App (Svelte SPA)") {
 
   Component(iframe_host, "Iframe Host", "Svelte component", "Loads custom renderer\nJS in sandboxed iframe.\nCommunicates via\npostMessage.\nReceives onValue calls.")
 
-  Component(api_client, "API Client", "TypeScript module", "Calls Patient API:\nGET questionnaire,\nPOST response,\nGET completed response.")
+  Component(api_client, "API Client", "Eden Treaty", "Type-safe client derived\nfrom Elysia routes.\nCalls Patient API:\nGET questionnaire,\nPOST response,\nGET completed response.")
 
   Component(response_viewer, "Response Viewer", "Svelte component", "Renders completed\nresponse in read-only\nmode.")
 }
@@ -381,7 +392,7 @@ Container_Boundary(employee_spa, "Employee App (Svelte SPA)") {
 
   Component(review_panel, "Review Panel", "Svelte component", "Shows source, preview,\nquality check results.\nApprove/reject/request\nchanges actions.")
 
-  Component(e_api_client, "API Client", "TypeScript module", "Calls Staff API:\nimport, preview, update,\nsubmit, review, publish,\nretire, list, quality checks.")
+  Component(e_api_client, "API Client", "Eden Treaty", "Type-safe client derived\nfrom Elysia routes.\nCalls Staff API:\nimport, preview, update,\nsubmit, review, publish,\nretire, list, quality checks.")
 }
 
 Rel(e_router, dashboard, "List route")
@@ -761,10 +772,10 @@ Consequences:: Simplest deployment. No CORS issues. No reverse proxy needed. But
 
 === ADR-004: SQLite for Local State
 
-Status:: Accepted
+Status:: Accepted (implementation refined in ADR-009)
 Context:: Questionnaire lifecycle state, `.mediform` source, and quality check results need persistent storage. FHIR is not designed for draft/review workflows.
 Decision:: Use SQLite via `bun:sqlite` for local state. In-memory mode acceptable for development.
-Consequences:: Zero-config, fast, embedded. No external database dependency. But no concurrent multi-process access (irrelevant for single-process prototype).
+Consequences:: Zero-config, fast, embedded. No external database dependency. But no concurrent multi-process access (irrelevant for single-process prototype). See ADR-009 for the repository pattern and test strategy.
 
 === ADR-005: Iframe Sandboxing for Custom Renderers
 
@@ -779,6 +790,34 @@ Status:: Accepted (supersedes provisional "single SPA" decision; resolved in iss
 Context:: The PRD left the single-app vs. two-app question open. Two separate apps add a small amount of build complexity but keep the patient bundle free of employee code without relying on tree-shaking. A single route-split SPA would ship employee code to patients.
 Decision:: Build `apps/patient` and `apps/employee` as two separate Svelte SPA packages, each with its own Vite build. Both are served as static files by the Elysia API server (`apps/api`). Patient routes are served under `/patient/`, employee routes under `/staff/`.
 Consequences:: Clean bundle separation — patients never download employee code. Slightly more build configuration (two `vite build` invocations). Shared logic lives in `packages/mediform-core` and is tree-shaken per app. Acceptable for a prototype; the two-app structure also maps naturally to a future split deployment if needed.
+
+=== ADR-007: Eden Treaty for Type-Safe API Communication
+
+Status:: Accepted
+Context:: Both Svelte SPAs need to call the Elysia API. Manual `fetch` wrappers require duplicating request/response types between backend and frontend. Type mismatches between the API contract and the client code are caught only at runtime, if at all.
+Decision:: Use Eden Treaty as the API client in both the patient and employee Svelte apps. Eden Treaty derives a fully typed client from the Elysia server's route definitions, providing end-to-end type safety from route handler to UI component.
+Consequences:: API contract changes are caught at compile time in both frontends. No manual type synchronization needed. Introduces a build-time dependency on the `api` package's type exports. Both SPAs must be able to import types from `apps/api` (supported by the monorepo workspace setup).
+
+=== ADR-008: Biome for Linting and Formatting
+
+Status:: Accepted
+Context:: The project had no linter or formatter configured. Inconsistent code style across packages slows review and increases cognitive load. ESLint + Prettier is the traditional choice but requires two tools, multiple config files, and plugin management.
+Decision:: Use Biome as the single tool for both linting and formatting. A single `biome.json` at the workspace root covers all packages. Biome is fast (written in Rust), requires minimal configuration, and handles both concerns in one pass.
+Consequences:: Consistent code style across the monorepo with zero per-package config. Faster than ESLint + Prettier. But Biome's rule set is smaller than ESLint's ecosystem; some niche rules may not be available. Acceptable for a prototype.
+
+=== ADR-009: SQLite with Repository Pattern (Replacing In-Memory Map)
+
+Status:: Accepted (supersedes the in-memory `Map` implementation; refines ADR-004)
+Context:: The initial prototype used an in-memory `Map<string, QuestionnaireRecord>` as the questionnaire store. This was fast to implement but data was lost on every server restart, making development workflows painful. ADR-004 already chose SQLite via `bun:sqlite` as the target; this ADR decides the migration approach and test strategy.
+Decision:: Replace the in-memory `Map` with `bun:sqlite`. Introduce a repository interface that the store module implements. The interface stays stable; the implementation moves from `Map` to SQLite. Use file-based SQLite (`mediform.db`) for development and in-memory SQLite (`:memory:`) for tests. The repository is injected at startup, making the backend easy to test.
+Consequences:: Data survives server restarts. Tests remain fast and isolated (each test gets a fresh in-memory database). The repository pattern adds a small abstraction layer but enables clean dependency injection. No ORM; queries use `bun:sqlite` directly.
+
+=== ADR-010: Pre-Push Hook for Code Quality Checks
+
+Status:: Accepted
+Context:: Without automated checks, formatting and linting violations reach the remote repository and are caught only during review. This wastes reviewer time and creates noisy diffs.
+Decision:: Install a pre-push Git hook (shell script or lefthook) that runs `biome check` on changed files. The hook blocks the push if violations are found.
+Consequences:: Code quality issues are caught before they reach the remote. The hook runs only on changed files, keeping it fast. Developers can bypass with `--no-verify` in emergencies. No heavy tooling (no husky, no lint-staged).
 
 '''
 

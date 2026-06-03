@@ -278,6 +278,9 @@ A production system would require clinical validation workflows, versioning, and
 | Language | TypeScript (modern, strict)
 | Frontend | Svelte
 | Backend | Elysia
+| API Client | Eden Treaty (type-safe, derived from Elysia routes)
+| Local Storage | SQLite via `bun:sqlite` (repository pattern; file-based for dev, in-memory for tests)
+| Linter/Formatter | Biome (single root config across the monorepo)
 | FHIR Server | HAPI FHIR (self-hosted)
 | Data Format | `.mediform` (custom DSL)
 |===
@@ -301,6 +304,7 @@ A production system would require clinical validation workflows, versioning, and
 
 The Elysia API is the compilation boundary.
 It parses `.mediform` files, compiles them to FHIR Questionnaire resources, and stores them on the HAPI server.
+Both Svelte SPAs consume the API via Eden Treaty, which derives a fully type-safe client from the Elysia route definitions.
 When a patient submits a response, the API compiles it into a FHIR QuestionnaireResponse (and, where mapped, Observation resources).
 
 === App Deployment
