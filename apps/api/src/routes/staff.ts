@@ -7,8 +7,10 @@
  * SUC-07: POST /staff/questionnaires/:id/submit
  * SUC-08: GET  /staff/questionnaires
  * SUC-09: POST /staff/questionnaires/:id/review
+ * SUC-12: POST /staff/questionnaires/:id/publish
+ * SUC-13: POST /staff/questionnaires/:id/retire
  *
- * Traceability: issues #25, #26, #27, #28, #29, #36.
+ * Traceability: issues #25, #26, #27, #28, #29, #36, #37, #38.
  */
 
 import { Elysia, t } from "elysia";
@@ -20,7 +22,16 @@ import type {
 	QuestionnaireStatus,
 	ReviewDecision,
 } from "mediform-core";
-import { parseMediform, runQualityChecks } from "mediform-core";
+import {
+	compileFhirQuestionnaire,
+	parseMediform,
+	runQualityChecks,
+} from "mediform-core";
+import {
+	createFhirQuestionnaire,
+	HapiFhirError,
+	updateFhirQuestionnaireStatus,
+} from "../fhir-client.js";
 import { toPatientQuestionnaire } from "../patient-view.js";
 import {
 	createRecord,
@@ -393,6 +404,113 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
 		{
 			params: t.Object({ id: t.String() }),
 			detail: { summary: "Submit questionnaire for review (SUC-07)" },
+		},
+	)
+
+	// -------------------------------------------------------------------------
+	// SUC-12: POST /staff/questionnaires/:id/publish  (#37)
+	// -------------------------------------------------------------------------
+	.post(
+		"/questionnaires/:id/publish",
+		async ({ params, set }) => {
+			const { id } = params;
+
+			const record = getRecord(id);
+			if (!record) {
+				set.status = 404;
+				return { message: "Questionnaire not found" };
+			}
+
+			if (record.status !== "approved") {
+				set.status = 409;
+				return { message: "Questionnaire is not in Approved status" };
+			}
+
+			const parseResult = parseMediform(record.source);
+			if (!parseResult.questionnaire) {
+				set.status = 422;
+				return {
+					message: "Compile failed",
+					errors: parseResult.errors,
+				};
+			}
+
+			const compileResult = compileFhirQuestionnaire(parseResult.questionnaire);
+			if (!compileResult.success || !compileResult.fhirQuestionnaire) {
+				set.status = 422;
+				return {
+					message: "Compile failed",
+					errors: compileResult.errors,
+				};
+			}
+
+			let fhirQuestionnaireId: string;
+			try {
+				fhirQuestionnaireId = await createFhirQuestionnaire(
+					compileResult.fhirQuestionnaire,
+				);
+			} catch (err) {
+				if (err instanceof HapiFhirError) {
+					set.status = 502;
+					return { message: "HAPI error" };
+				}
+				throw err;
+			}
+
+			const patientLink = `/q/${record.id}`;
+			const updated = updateStatus(id, "published", {
+				patientLink,
+				fhirQuestionnaireId,
+			});
+
+			return { questionnaire: updated, patientLink, fhirQuestionnaireId };
+		},
+		{
+			params: t.Object({ id: t.String() }),
+			detail: { summary: "Publish an approved questionnaire (SUC-12)" },
+		},
+	)
+
+	// -------------------------------------------------------------------------
+	// SUC-13: POST /staff/questionnaires/:id/retire  (#38)
+	// -------------------------------------------------------------------------
+	.post(
+		"/questionnaires/:id/retire",
+		async ({ params, set }) => {
+			const { id } = params;
+
+			const record = getRecord(id);
+			if (!record) {
+				set.status = 404;
+				return { message: "Questionnaire not found" };
+			}
+
+			if (record.status !== "published") {
+				set.status = 409;
+				return { message: "Questionnaire is not in Published status" };
+			}
+
+			if (record.fhirQuestionnaireId) {
+				try {
+					await updateFhirQuestionnaireStatus(
+						record.fhirQuestionnaireId,
+						"retired",
+					);
+				} catch (err) {
+					if (err instanceof HapiFhirError) {
+						set.status = 502;
+						return { message: "HAPI error" };
+					}
+					throw err;
+				}
+			}
+
+			const updated = updateStatus(id, "retired");
+			return { questionnaire: updated };
+		},
+		{
+			params: t.Object({ id: t.String() }),
+			detail: { summary: "Retire a published questionnaire (SUC-13)" },
 		},
 	)
 
