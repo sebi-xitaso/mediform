@@ -16,12 +16,12 @@ import type { QuestionnaireStatus } from "../types.js";
 // ---------------------------------------------------------------------------
 
 const TERMINAL_STATUSES: ReadonlySet<QuestionnaireStatus> = new Set([
-  "rejected",
-  "retired",
+	"rejected",
+	"retired",
 ]);
 
 function isTerminalStatus(status: QuestionnaireStatus): boolean {
-  return TERMINAL_STATUSES.has(status);
+	return TERMINAL_STATUSES.has(status);
 }
 
 // ---------------------------------------------------------------------------
@@ -29,27 +29,27 @@ function isTerminalStatus(status: QuestionnaireStatus): boolean {
 // ---------------------------------------------------------------------------
 
 describe("isTerminalStatus", () => {
-  it("returns true for rejected status", () => {
-    expect(isTerminalStatus("rejected")).toBe(true);
-  });
+	it("returns true for rejected status", () => {
+		expect(isTerminalStatus("rejected")).toBe(true);
+	});
 
-  it("returns true for retired status", () => {
-    expect(isTerminalStatus("retired")).toBe(true);
-  });
+	it("returns true for retired status", () => {
+		expect(isTerminalStatus("retired")).toBe(true);
+	});
 
-  it("returns false for draft status", () => {
-    expect(isTerminalStatus("draft")).toBe(false);
-  });
+	it("returns false for draft status", () => {
+		expect(isTerminalStatus("draft")).toBe(false);
+	});
 
-  it("returns false for review status", () => {
-    expect(isTerminalStatus("review")).toBe(false);
-  });
+	it("returns false for review status", () => {
+		expect(isTerminalStatus("review")).toBe(false);
+	});
 
-  it("returns false for approved status", () => {
-    expect(isTerminalStatus("approved")).toBe(false);
-  });
+	it("returns false for approved status", () => {
+		expect(isTerminalStatus("approved")).toBe(false);
+	});
 
-  it("returns false for published status", () => {
-    expect(isTerminalStatus("published")).toBe(false);
-  });
+	it("returns false for published status", () => {
+		expect(isTerminalStatus("published")).toBe(false);
+	});
 });

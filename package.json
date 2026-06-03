@@ -1,17 +1,20 @@
 {
-  "name": "mediform",
-  "version": "0.0.1",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json && bun run --filter '*' typecheck",
-    "test": "bun test --recursive",
-    "dev:api": "bun run --cwd apps/api dev"
-  },
-  "devDependencies": {
-    "typescript": "^5.4.5"
-  }
+	"name": "mediform",
+	"version": "0.0.1",
+	"private": true,
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"typecheck": "tsc --noEmit -p tsconfig.json && bun run --filter '*' typecheck",
+		"test": "bun test --recursive",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"dev:api": "bun run --cwd apps/api dev"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.16",
+		"typescript": "^5.4.5"
+	}
 }

@@ -6,41 +6,41 @@
  */
 
 import type {
-  ParsedQuestionnaire,
-  PatientQuestionnaire,
-  PatientSection,
-  PatientQuestion,
+	ParsedQuestionnaire,
+	PatientQuestion,
+	PatientQuestionnaire,
+	PatientSection,
 } from "mediform-core";
 
 export function toPatientQuestionnaire(
-  id: string,
-  parsed: ParsedQuestionnaire
+	id: string,
+	parsed: ParsedQuestionnaire,
 ): PatientQuestionnaire {
-  const { frontmatter, sections } = parsed;
+	const { frontmatter, sections } = parsed;
 
-  const patientSections: PatientSection[] = sections.map((section) => ({
-    title: section.title,
-    questions: section.questions.map((q): PatientQuestion => {
-      const config: Record<string, unknown> = { ...q.config };
-      if (q.options) {
-        config["options"] = q.options.map((o) => ({ label: o.label }));
-      }
-      return {
-        id: q.id,
-        title: q.title,
-        description: q.description,
-        type: q.type,
-        required: q.required,
-        config,
-        renderer: q.renderer,
-      };
-    }),
-  }));
+	const patientSections: PatientSection[] = sections.map((section) => ({
+		title: section.title,
+		questions: section.questions.map((q): PatientQuestion => {
+			const config: Record<string, unknown> = { ...q.config };
+			if (q.options) {
+				config.options = q.options.map((o) => ({ label: o.label }));
+			}
+			return {
+				id: q.id,
+				title: q.title,
+				description: q.description,
+				type: q.type,
+				required: q.required,
+				config,
+				renderer: q.renderer,
+			};
+		}),
+	}));
 
-  return {
-    id,
-    title: frontmatter.title,
-    description: frontmatter.description,
-    sections: patientSections,
-  };
+	return {
+		id,
+		title: frontmatter.title,
+		description: frontmatter.description,
+		sections: patientSections,
+	};
 }

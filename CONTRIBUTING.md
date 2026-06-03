@@ -1,5 +1,17 @@
 # Contributing to mediform
 
+## Linting and formatting
+
+We use [Biome](https://biomejs.dev) for both linting and formatting.
+
+```bash
+bun run lint      # check for violations (exits non-zero on errors)
+bun run format    # apply safe fixes and format in place
+```
+
+Biome is configured in `biome.json` at the workspace root.
+Run `bun run lint` before pushing; the pre-push hook (#66) will enforce this automatically once set up.
+
 ## Testing convention
 
 We practise TDD. Choose the school that fits the unit under test:
