@@ -175,7 +175,9 @@ function parseFrontmatterYaml(
 
 	return {
 		title: kvMap.title as string,
-		description: (kvMap.description as string | undefined) ?? undefined,
+		...(kvMap.description !== undefined
+			? { description: kvMap.description as string }
+			: {}),
 		version: String(kvMap.version),
 		status: kvMap.status as QuestionnaireStatus,
 	};
@@ -464,14 +466,14 @@ function buildQuestion(
 	return {
 		id,
 		title: raw.title ?? "",
-		description,
+		...(description !== undefined ? { description } : {}),
 		type: (rawType as QuestionType) ?? "string",
 		required,
 		mapsTo: (rawMapsTo as MapsToType) ?? "string",
-		loinc: meta.loinc ?? undefined,
-		options,
-		config,
-		renderer: raw.renderer ?? undefined,
+		...(meta.loinc !== undefined ? { loinc: meta.loinc as string } : {}),
+		...(options !== undefined ? { options } : {}),
+		...(Object.keys(config).length > 0 ? { config } : {}),
+		...(raw.renderer !== undefined ? { renderer: raw.renderer } : {}),
 	};
 }
 
@@ -482,7 +484,7 @@ function parseOption(raw: string): AnswerOption {
 	}
 	const label = raw.slice(0, pipeIdx).trim();
 	const code = raw.slice(pipeIdx + 1).trim();
-	return { label, snomedCode: code || undefined };
+	return { label, ...(code ? { snomedCode: code } : {}) };
 }
 
 function slugify(title: string): string {

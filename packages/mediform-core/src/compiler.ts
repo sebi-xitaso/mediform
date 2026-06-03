@@ -49,10 +49,12 @@ export function compileFhirQuestionnaire(
 	const fhirQuestionnaire: FHIRQuestionnaire = {
 		resourceType: "Questionnaire",
 		title: frontmatter.title,
-		description: frontmatter.description,
+		...(frontmatter.description !== undefined
+			? { description: frontmatter.description }
+			: {}),
 		version: frontmatter.version,
 		status: mapStatus(frontmatter.status),
-		item: items.length > 0 ? items : undefined,
+		...(items.length > 0 ? { item: items } : {}),
 	};
 
 	return {
@@ -114,7 +116,7 @@ function buildQuestionItem(
 		linkId: question.id,
 		text: question.title,
 		type: mapQuestionType(question.type),
-		required: question.required || undefined,
+		...(question.required ? { required: true } : {}),
 	};
 
 	// LOINC code → item.code

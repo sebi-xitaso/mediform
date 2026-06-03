@@ -15,6 +15,7 @@ import type {
 	MetadataWarning,
 	ParsedQuestionnaire,
 	QuestionnaireListItem,
+	QuestionnaireRecord,
 	QuestionnaireStatus,
 	ReviewDecision,
 } from "mediform-core";
@@ -24,7 +25,6 @@ import {
 	createRecord,
 	getRecord,
 	listRecords,
-	type QuestionnaireRecord,
 	updateSource,
 	updateStatus,
 } from "../store.js";
@@ -98,7 +98,9 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
 
 			const record = createRecord({
 				title: questionnaire.frontmatter.title,
-				description: questionnaire.frontmatter.description,
+				...(questionnaire.frontmatter.description !== undefined
+					? { description: questionnaire.frontmatter.description }
+					: {}),
 				source,
 			});
 
@@ -189,8 +191,10 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
 
 			const updated = updateSource(id, {
 				source,
-				title: updatedTitle,
-				description: updatedDescription,
+				...(updatedTitle !== undefined ? { title: updatedTitle } : {}),
+				...(updatedDescription !== undefined
+					? { description: updatedDescription }
+					: {}),
 			});
 
 			const validation = {
@@ -311,12 +315,12 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
 			} else if (decision === "request_changes") {
 				// BR-025: attach feedback, transition back to Draft
 				updated = updateStatus(id, "draft", {
-					reviewFeedback: feedback,
+					...(feedback !== undefined ? { reviewFeedback: feedback } : {}),
 				});
 			} else {
 				// reject
 				updated = updateStatus(id, "rejected", {
-					rejectionReason: feedback,
+					...(feedback !== undefined ? { rejectionReason: feedback } : {}),
 				});
 			}
 

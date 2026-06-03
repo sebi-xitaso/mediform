@@ -16,7 +16,8 @@ beforeEach(() => {
 	repo = new SqliteQuestionnaireRepository(":memory:");
 });
 
-const SOURCE = "---\ntitle: T\nversion: 1.0\nstatus: draft\n---\n\n# Q\nText.\n";
+const SOURCE =
+	"---\ntitle: T\nversion: 1.0\nstatus: draft\n---\n\n# Q\nText.\n";
 
 // ---------------------------------------------------------------------------
 // create
