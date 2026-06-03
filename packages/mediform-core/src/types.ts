@@ -279,3 +279,31 @@ export interface CompileResponseResult {
 	observations: FHIRObservation[];
 	errors: CompileResponseError[];
 }
+
+// ---------------------------------------------------------------------------
+// Completed response (SUC-03 output)
+// ---------------------------------------------------------------------------
+
+export interface CompletedAnswer {
+	questionId: string;
+	questionTitle: string;
+	answer: unknown | null; // null for unanswered optional questions (BR-006)
+}
+
+export interface CompletedResponse {
+	responseId: string;
+	responseLink: string;
+	questionnaireId: string;
+	submittedAt: string;
+	answers: CompletedAnswer[];
+}
+
+// ---------------------------------------------------------------------------
+// Validation errors (SUC-02 output)
+// ---------------------------------------------------------------------------
+
+export interface ValidationError {
+	questionId: string;
+	code: "REQUIRED" | "TYPE_MISMATCH";
+	message: string;
+}
