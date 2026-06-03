@@ -4,14 +4,28 @@
  * SUC-04: POST /staff/questionnaires/import
  * SUC-05: POST /staff/questionnaires/preview
  * SUC-06: PUT  /staff/questionnaires/:id
+ * SUC-08: GET  /staff/questionnaires
+ * SUC-09: POST /staff/questionnaires/:id/review
  *
- * Traceability: issues #25, #26, #27.
+ * Traceability: issues #25, #26, #27, #29, #36.
  */
 
 import { Elysia, t } from "elysia";
-import { parseMediform, compileFhirQuestionnaire } from "mediform-core";
-import type { MetadataWarning, ParsedQuestionnaire } from "mediform-core";
-import { createRecord, getRecord, updateSource } from "../store.js";
+import { parseMediform } from "mediform-core";
+import type {
+  MetadataWarning,
+  ParsedQuestionnaire,
+  QuestionnaireListItem,
+  QuestionnaireStatus,
+  ReviewDecision,
+} from "mediform-core";
+import {
+  createRecord,
+  getRecord,
+  updateSource,
+  updateStatus,
+  listRecords,
+} from "../store.js";
 import { toPatientQuestionnaire } from "../patient-view.js";
 
 // ---------------------------------------------------------------------------
@@ -188,5 +202,127 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
       params: t.Object({ id: t.String() }),
       body: t.Object({ source: t.String() }),
       detail: { summary: "Update a draft questionnaire's source (SUC-06)" },
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // SUC-08: List questionnaires with optional status filter
+  // -------------------------------------------------------------------------
+  .get(
+    "/questionnaires",
+    ({ query, set }) => {
+      const VALID_STATUSES = new Set<string>([
+        "draft",
+        "review",
+        "approved",
+        "published",
+        "retired",
+        "rejected",
+      ]);
+
+      // `status` may be a single string or an array (repeated query param)
+      const rawStatus = query.status;
+      const requestedStatuses: string[] = rawStatus
+        ? Array.isArray(rawStatus)
+          ? rawStatus
+          : [rawStatus]
+        : [];
+
+      for (const s of requestedStatuses) {
+        if (!VALID_STATUSES.has(s)) {
+          set.status = 400;
+          return { message: "Invalid status filter", invalidValue: s };
+        }
+      }
+
+      const records = listRecords(
+        requestedStatuses.length > 0
+          ? (requestedStatuses as QuestionnaireStatus[])
+          : undefined
+      );
+
+      const items: QuestionnaireListItem[] = records.map((r) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        author: r.author,
+        lastModified: r.lastModified,
+        hasReviewFeedback: !!r.reviewFeedback,
+      }));
+
+      return items;
+    },
+    {
+      query: t.Object({
+        status: t.Optional(t.Union([t.String(), t.Array(t.String())])),
+      }),
+      detail: { summary: "List questionnaires with optional status filter (SUC-08)" },
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // SUC-09: Record a review decision (approve / request_changes / reject)
+  // -------------------------------------------------------------------------
+  .post(
+    "/questionnaires/:id/review",
+    ({ params, body, set }) => {
+      const { id } = params;
+      const { decision, feedback } = body;
+
+      const VALID_DECISIONS: ReviewDecision[] = [
+        "approve",
+        "request_changes",
+        "reject",
+      ];
+      if (!VALID_DECISIONS.includes(decision as ReviewDecision)) {
+        set.status = 400;
+        return { message: "Invalid decision value" };
+      }
+
+      const record = getRecord(id);
+
+      if (!record) {
+        set.status = 404;
+        return { message: "Questionnaire not found" };
+      }
+
+      if (record.status !== "review") {
+        set.status = 409;
+        return { message: "Questionnaire is not in Review status" };
+      }
+
+      // BR-023: feedback required for request_changes and reject
+      if (
+        (decision === "request_changes" || decision === "reject") &&
+        (!feedback || feedback.trim() === "")
+      ) {
+        set.status = 422;
+        return { message: "Feedback required for this decision" };
+      }
+
+      let updated;
+      if (decision === "approve") {
+        updated = updateStatus(id, "approved");
+      } else if (decision === "request_changes") {
+        // BR-025: attach feedback, transition back to Draft
+        updated = updateStatus(id, "draft", {
+          reviewFeedback: feedback,
+        });
+      } else {
+        // reject
+        updated = updateStatus(id, "rejected", {
+          rejectionReason: feedback,
+        });
+      }
+
+      return { questionnaire: updated };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      body: t.Object({
+        decision: t.String(),
+        feedback: t.Optional(t.String()),
+      }),
+      detail: { summary: "Record a review decision (SUC-09)" },
     }
   );

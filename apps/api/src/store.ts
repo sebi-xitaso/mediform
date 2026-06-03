@@ -98,13 +98,29 @@ export function updateStatus(
   return updated;
 }
 
-/** List all records, optionally filtered by status. */
+/** List all records, optionally filtered by one or more statuses.
+ *
+ * Sort order (BR-035):
+ *   1. Review-status items first (priority for trained staff).
+ *   2. Within each group, most-recently-modified first.
+ */
 export function listRecords(
-  filter?: Partial<Pick<QuestionnaireRecord, "status">>
+  statuses?: QuestionnaireStatus[]
 ): QuestionnaireRecord[] {
-  const all = Array.from(records.values());
-  if (filter?.status) return all.filter((r) => r.status === filter.status);
-  return all;
+  let all = Array.from(records.values());
+  if (statuses && statuses.length > 0) {
+    all = all.filter((r) => statuses.includes(r.status));
+  }
+  return all.sort((a, b) => {
+    // Review items first
+    const aReview = a.status === "review" ? 0 : 1;
+    const bReview = b.status === "review" ? 0 : 1;
+    if (aReview !== bReview) return aReview - bReview;
+    // Then by lastModified descending
+    return (
+      new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
+    );
+  });
 }
 
 /**

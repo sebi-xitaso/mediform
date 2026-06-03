@@ -1,0 +1,75 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`parse errors – snapshots malformed frontmatter: missing opening --- 1`] = `
+[
+  {
+    "line": 1,
+    "message": "Missing frontmatter: file must start with ---",
+  },
+]
+`;
+
+exports[`parse errors – snapshots malformed frontmatter: missing required title 1`] = `
+[
+  {
+    "line": 1,
+    "message": "Frontmatter missing required field: title",
+  },
+]
+`;
+
+exports[`parse errors – snapshots malformed frontmatter: invalid YAML (unclosed bracket) 1`] = `
+[
+  {
+    "line": 1,
+    "message": "Malformed YAML frontmatter",
+  },
+]
+`;
+
+exports[`parse errors – snapshots unknown question type 1`] = `
+[
+  {
+    "line": 7,
+    "message": "Question "Q": unknown type "wizard"",
+  },
+]
+`;
+
+exports[`parse errors – snapshots missing required type field 1`] = `
+[
+  {
+    "line": 7,
+    "message": "Question "Q": missing required field "type"",
+  },
+]
+`;
+
+exports[`parse errors – snapshots invalid required value (not boolean) 1`] = `
+[
+  {
+    "line": 7,
+    "message": "Question "Q": "required" must be true or false, got "maybe"",
+  },
+]
+`;
+
+exports[`compile errors – snapshots malformed LOINC code 1`] = `
+[
+  {
+    "field": "loinc",
+    "message": "Question "Q": malformed LOINC code "not-a-loinc"",
+    "questionId": "q",
+  },
+]
+`;
+
+exports[`compile errors – snapshots malformed SNOMED code in option 1`] = `
+[
+  {
+    "field": "options",
+    "message": "Question "Q": malformed SNOMED code "NOT_SNOMED_123"",
+    "questionId": "q",
+  },
+]
+`;
