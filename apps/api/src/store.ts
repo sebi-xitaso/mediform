@@ -7,7 +7,7 @@
  * Traceability: ADR-009, #67.
  */
 
-import type { QuestionnaireRecord, QuestionnaireStatus } from "mediform-core";
+import type { QuestionnaireRecord, QuestionnaireStatus, QualityCheckResponse } from "mediform-core";
 import { SqliteQuestionnaireRepository } from "./repository.js";
 
 // ---------------------------------------------------------------------------
@@ -84,4 +84,19 @@ export function listRecords(
  */
 export function _clearStore(): void {
 	repo.clear();
+}
+
+/** Persist the latest quality-check result for a questionnaire (#53). */
+export function saveQualityCheck(
+	questionnaireId: string,
+	result: QualityCheckResponse,
+): void {
+	repo.saveQualityCheck(questionnaireId, result);
+}
+
+/** Retrieve the latest quality-check result for a questionnaire (#53). */
+export function getQualityCheck(
+	questionnaireId: string,
+): QualityCheckResponse | undefined {
+	return repo.getQualityCheck(questionnaireId);
 }
