@@ -9,6 +9,12 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import { Elysia } from "elysia";
+import type {
+	MetadataWarning,
+	ParseError,
+	PatientQuestionnaire,
+	QuestionnaireRecord,
+} from "mediform-core";
 import { staffRoutes } from "../routes/staff.js";
 import { _clearStore } from "../store.js";
 
@@ -71,7 +77,10 @@ describe("POST /staff/questionnaires/import", () => {
 			source: VALID_SOURCE,
 		});
 		expect(res.status).toBe(201);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: QuestionnaireRecord;
+			warnings: MetadataWarning[];
+		};
 		expect(body.questionnaire.id).toBeTruthy();
 		expect(body.questionnaire.title).toBe("Pain Assessment");
 		expect(body.questionnaire.status).toBe("draft");
@@ -82,7 +91,10 @@ describe("POST /staff/questionnaires/import", () => {
 		const res = await req("POST", "/staff/questionnaires/import", {
 			source: VALID_SOURCE,
 		});
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: QuestionnaireRecord;
+			warnings: MetadataWarning[];
+		};
 		expect(() => new Date(body.questionnaire.createdAt)).not.toThrow();
 		expect(() => new Date(body.questionnaire.lastModified)).not.toThrow();
 	});
@@ -93,8 +105,13 @@ describe("POST /staff/questionnaires/import", () => {
 			source: noLoinc,
 		});
 		expect(res.status).toBe(201);
-		const body = (await res.json()) as any;
-		expect(body.warnings.some((w: any) => w.field === "loinc")).toBe(true);
+		const body = (await res.json()) as {
+			questionnaire: QuestionnaireRecord;
+			warnings: MetadataWarning[];
+		};
+		expect(
+			body.warnings.some((w: MetadataWarning) => w.field === "loinc"),
+		).toBe(true);
 	});
 
 	it("returns 422 with error list on syntax errors", async () => {
@@ -102,7 +119,7 @@ describe("POST /staff/questionnaires/import", () => {
 			source: INVALID_SOURCE,
 		});
 		expect(res.status).toBe(422);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as { errors: ParseError[] };
 		expect(body.errors.length).toBeGreaterThan(0);
 		expect(body.errors[0].line).toBeGreaterThanOrEqual(1);
 	});
@@ -141,7 +158,10 @@ describe("POST /staff/questionnaires/preview", () => {
 			source: VALID_SOURCE,
 		});
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: PatientQuestionnaire | null;
+			errors: ParseError[];
+		};
 		expect(body.questionnaire).not.toBeNull();
 		expect(body.questionnaire.title).toBe("Pain Assessment");
 		expect(body.questionnaire.sections).toBeDefined();
@@ -152,7 +172,10 @@ describe("POST /staff/questionnaires/preview", () => {
 		const res = await req("POST", "/staff/questionnaires/preview", {
 			source: VALID_SOURCE,
 		});
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: PatientQuestionnaire | null;
+			errors: ParseError[];
+		};
 		const q = body.questionnaire.sections[0].questions[0];
 		// FHIR-internal fields should not appear
 		expect(q.loinc).toBeUndefined();
@@ -167,7 +190,10 @@ describe("POST /staff/questionnaires/preview", () => {
 			source: INVALID_SOURCE,
 		});
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: PatientQuestionnaire | null;
+			errors: ParseError[];
+		};
 		expect(body.questionnaire).toBeNull();
 		expect(body.errors.length).toBeGreaterThan(0);
 	});
@@ -204,7 +230,10 @@ describe("PUT /staff/questionnaires/:id", () => {
 		const res = await req("POST", "/staff/questionnaires/import", {
 			source: VALID_SOURCE,
 		});
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: QuestionnaireRecord;
+			warnings: MetadataWarning[];
+		};
 		return { id: body.questionnaire.id };
 	}
 
@@ -218,7 +247,14 @@ describe("PUT /staff/questionnaires/:id", () => {
 			source: updatedSource,
 		});
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: QuestionnaireRecord;
+			validation: {
+				valid: boolean;
+				errors: ParseError[];
+				warnings: MetadataWarning[];
+			};
+		};
 		expect(body.questionnaire.title).toBe("Updated Assessment");
 		expect(body.questionnaire.source).toBe(updatedSource);
 		expect(body.validation.valid).toBe(true);
@@ -231,7 +267,14 @@ describe("PUT /staff/questionnaires/:id", () => {
 		const res = await req("PUT", `/staff/questionnaires/${id}`, {
 			source: VALID_SOURCE,
 		});
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: QuestionnaireRecord;
+			validation: {
+				valid: boolean;
+				errors: ParseError[];
+				warnings: MetadataWarning[];
+			};
+		};
 		const created = new Date(body.questionnaire.createdAt).getTime();
 		const modified = new Date(body.questionnaire.lastModified).getTime();
 		expect(modified).toBeGreaterThanOrEqual(created);
@@ -243,7 +286,14 @@ describe("PUT /staff/questionnaires/:id", () => {
 			source: INVALID_SOURCE,
 		});
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as {
+			questionnaire: QuestionnaireRecord;
+			validation: {
+				valid: boolean;
+				errors: ParseError[];
+				warnings: MetadataWarning[];
+			};
+		};
 		expect(body.validation.valid).toBe(false);
 		expect(body.validation.errors.length).toBeGreaterThan(0);
 		// Source is still stored
@@ -272,7 +322,7 @@ describe("PUT /staff/questionnaires/:id", () => {
 			source: VALID_SOURCE,
 		});
 		expect(res.status).toBe(409);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as { message: string };
 		expect(body.message).toMatch(/draft/i);
 	});
 

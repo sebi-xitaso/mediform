@@ -174,6 +174,8 @@ function buildObservation(
 	value: unknown,
 	derivedFromRef: string,
 ): FHIRObservation {
+	const loinc = question.loinc;
+	if (!loinc) throw new Error("buildObservation requires a LOINC code");
 	const obs: FHIRObservation = {
 		resourceType: "Observation",
 		status: "final",
@@ -181,7 +183,7 @@ function buildObservation(
 			coding: [
 				{
 					system: "http://loinc.org",
-					code: question.loinc!,
+					code: loinc,
 				},
 			],
 		},

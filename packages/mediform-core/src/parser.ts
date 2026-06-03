@@ -357,7 +357,8 @@ function parseBody(
 					continue;
 				}
 
-				currentQuestion.metadata![key] = val;
+				if (!currentQuestion.metadata) currentQuestion.metadata = {};
+				currentQuestion.metadata[key] = val;
 			}
 			continue;
 		}

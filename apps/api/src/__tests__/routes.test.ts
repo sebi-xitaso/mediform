@@ -10,6 +10,11 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import { Elysia } from "elysia";
+import type {
+	PatientQuestionnaire,
+	QuestionnaireListItem,
+	QuestionnaireRecord,
+} from "mediform-core";
 import { patientRoutes } from "../routes/patient.js";
 import { staffRoutes } from "../routes/staff.js";
 import { _clearStore, createRecord, updateStatus } from "../store.js";
@@ -66,16 +71,18 @@ Where do you feel pain?
 describe("GET /patient/questionnaires/:id", () => {
 	beforeEach(() => _clearStore());
 
-	function makePublished() {
+	function makePublished(): QuestionnaireRecord {
 		const r = createRecord({ title: "Pain Assessment", source: VALID_SOURCE });
-		return updateStatus(r.id, "published")!;
+		const result = updateStatus(r.id, "published");
+		if (!result) throw new Error("updateStatus returned undefined");
+		return result;
 	}
 
 	it("returns 200 with PatientQuestionnaire for a published questionnaire", async () => {
 		const record = makePublished();
 		const res = await req("GET", `/patient/questionnaires/${record.id}`);
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as PatientQuestionnaire;
 		expect(body.id).toBe(record.id);
 		expect(body.title).toBe("Pain Assessment");
 		expect(body.sections).toBeDefined();
@@ -84,7 +91,7 @@ describe("GET /patient/questionnaires/:id", () => {
 	it("strips FHIR-internal fields from the response", async () => {
 		const record = makePublished();
 		const res = await req("GET", `/patient/questionnaires/${record.id}`);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as PatientQuestionnaire;
 		const q = body.sections[0].questions[0];
 		expect(q.loinc).toBeUndefined();
 		expect(q.mapsTo).toBeUndefined();
@@ -113,7 +120,7 @@ Trace the pattern.
 		const r = createRecord({ title: "Custom Q", source: customSource });
 		updateStatus(r.id, "published");
 		const res = await req("GET", `/patient/questionnaires/${r.id}`);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as PatientQuestionnaire;
 		const q = body.sections[0].questions[0];
 		expect(q.renderer).toContain("onValue");
 	});
@@ -155,14 +162,14 @@ describe("GET /staff/questionnaires", () => {
 		createRecord({ title: "A", source: VALID_SOURCE });
 		createRecord({ title: "B", source: VALID_SOURCE });
 		const res = await req("GET", "/staff/questionnaires");
-		const body = (await res.json()) as any[];
+		const body = (await res.json()) as QuestionnaireListItem[];
 		expect(body).toHaveLength(2);
 	});
 
 	it("returns QuestionnaireListItem shape", async () => {
 		const r = createRecord({ title: "A", source: VALID_SOURCE });
 		const res = await req("GET", "/staff/questionnaires");
-		const body = (await res.json()) as any[];
+		const body = (await res.json()) as QuestionnaireListItem[];
 		const item = body[0];
 		expect(item.id).toBe(r.id);
 		expect(item.title).toBe("A");
@@ -177,7 +184,7 @@ describe("GET /staff/questionnaires", () => {
 		createRecord({ title: "B", source: VALID_SOURCE });
 		updateStatus(r.id, "review");
 		const res = await req("GET", "/staff/questionnaires?status=review");
-		const body = (await res.json()) as any[];
+		const body = (await res.json()) as QuestionnaireListItem[];
 		expect(body).toHaveLength(1);
 		expect(body[0].status).toBe("review");
 	});
@@ -192,7 +199,7 @@ describe("GET /staff/questionnaires", () => {
 			"GET",
 			"/staff/questionnaires?status=review&status=approved",
 		);
-		const body = (await res.json()) as any[];
+		const body = (await res.json()) as QuestionnaireListItem[];
 		expect(body).toHaveLength(2);
 	});
 
@@ -201,7 +208,7 @@ describe("GET /staff/questionnaires", () => {
 		const r = createRecord({ title: "In Review", source: VALID_SOURCE });
 		updateStatus(r.id, "review");
 		const res = await req("GET", "/staff/questionnaires");
-		const body = (await res.json()) as any[];
+		const body = (await res.json()) as QuestionnaireListItem[];
 		expect(body[0].status).toBe("review");
 	});
 
@@ -210,7 +217,7 @@ describe("GET /staff/questionnaires", () => {
 		await new Promise((r) => setTimeout(r, 5));
 		const b = createRecord({ title: "New", source: VALID_SOURCE });
 		const res = await req("GET", "/staff/questionnaires");
-		const body = (await res.json()) as any[];
+		const body = (await res.json()) as QuestionnaireListItem[];
 		expect(body[0].id).toBe(b.id);
 		expect(body[1].id).toBe(a.id);
 	});
@@ -220,7 +227,7 @@ describe("GET /staff/questionnaires", () => {
 		updateStatus(r.id, "review");
 		updateStatus(r.id, "draft", { reviewFeedback: "Please fix this." });
 		const res = await req("GET", "/staff/questionnaires");
-		const body = (await res.json()) as any[];
+		const body = (await res.json()) as QuestionnaireListItem[];
 		expect(body[0].hasReviewFeedback).toBe(true);
 	});
 
@@ -237,9 +244,11 @@ describe("GET /staff/questionnaires", () => {
 describe("POST /staff/questionnaires/:id/review", () => {
 	beforeEach(() => _clearStore());
 
-	function makeReview() {
+	function makeReview(): QuestionnaireRecord {
 		const r = createRecord({ title: "T", source: VALID_SOURCE });
-		return updateStatus(r.id, "review")!;
+		const result = updateStatus(r.id, "review");
+		if (!result) throw new Error("updateStatus returned undefined");
+		return result;
 	}
 
 	it("transitions to Approved on approve decision", async () => {
@@ -248,7 +257,7 @@ describe("POST /staff/questionnaires/:id/review", () => {
 			decision: "approve",
 		});
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as { questionnaire: QuestionnaireRecord };
 		expect(body.questionnaire.status).toBe("approved");
 	});
 
@@ -267,7 +276,7 @@ describe("POST /staff/questionnaires/:id/review", () => {
 			feedback: "Please add LOINC codes.",
 		});
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as { questionnaire: QuestionnaireRecord };
 		expect(body.questionnaire.status).toBe("draft");
 		expect(body.questionnaire.reviewFeedback).toBe("Please add LOINC codes.");
 	});
@@ -279,7 +288,7 @@ describe("POST /staff/questionnaires/:id/review", () => {
 			feedback: "Out of scope for this clinic.",
 		});
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
+		const body = (await res.json()) as { questionnaire: QuestionnaireRecord };
 		expect(body.questionnaire.status).toBe("rejected");
 		expect(body.questionnaire.rejectionReason).toBe(
 			"Out of scope for this clinic.",

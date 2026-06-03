@@ -120,7 +120,9 @@ describe("compileFhirQuestionnaire – sections", () => {
 	it("wraps a named section as a group item", () => {
 		const result = compileFhirQuestionnaire(WITH_SECTION);
 		expect(result.success).toBe(true);
-		const items = result.fhirQuestionnaire!.item!;
+		if (!result.fhirQuestionnaire)
+			throw new Error("Expected fhirQuestionnaire");
+		const items = result.fhirQuestionnaire.item ?? [];
 		expect(items[0].type).toBe("group");
 		expect(items[0].text).toBe("General");
 		expect(items[0].linkId).toBeTruthy();
@@ -128,7 +130,9 @@ describe("compileFhirQuestionnaire – sections", () => {
 
 	it("inlines top-level questions when section title is null", () => {
 		const result = compileFhirQuestionnaire(SIMPLE_QUESTIONNAIRE);
-		const items = result.fhirQuestionnaire!.item!;
+		if (!result.fhirQuestionnaire)
+			throw new Error("Expected fhirQuestionnaire");
+		const items = result.fhirQuestionnaire.item ?? [];
 		// Inline: questions appear directly without a group wrapper
 		expect(items[0].type).not.toBe("group");
 	});
@@ -141,7 +145,9 @@ describe("compileFhirQuestionnaire – sections", () => {
 describe("compileFhirQuestionnaire – questions", () => {
 	it("maps a choice question to FHIR choice type", () => {
 		const result = compileFhirQuestionnaire(SIMPLE_QUESTIONNAIRE);
-		const item = result.fhirQuestionnaire!.item![0];
+		if (!result.fhirQuestionnaire)
+			throw new Error("Expected fhirQuestionnaire");
+		const item = (result.fhirQuestionnaire.item ?? [])[0];
 		expect(item.type).toBe("choice");
 		expect(item.text).toBe("Pain Location");
 		expect(item.required).toBe(true);
@@ -149,7 +155,9 @@ describe("compileFhirQuestionnaire – questions", () => {
 
 	it("maps LOINC code to item.code array", () => {
 		const result = compileFhirQuestionnaire(SIMPLE_QUESTIONNAIRE);
-		const item = result.fhirQuestionnaire!.item![0];
+		if (!result.fhirQuestionnaire)
+			throw new Error("Expected fhirQuestionnaire");
+		const item = (result.fhirQuestionnaire.item ?? [])[0];
 		expect(item.code).toHaveLength(1);
 		expect(item.code?.[0].code).toBe("72514-3");
 		expect(item.code?.[0].system).toBe("http://loinc.org");
@@ -157,7 +165,9 @@ describe("compileFhirQuestionnaire – questions", () => {
 
 	it("maps SNOMED options to answerOption.valueCoding", () => {
 		const result = compileFhirQuestionnaire(SIMPLE_QUESTIONNAIRE);
-		const item = result.fhirQuestionnaire!.item![0];
+		if (!result.fhirQuestionnaire)
+			throw new Error("Expected fhirQuestionnaire");
+		const item = (result.fhirQuestionnaire.item ?? [])[0];
 		expect(item.answerOption).toHaveLength(2);
 		expect(item.answerOption?.[0].valueCoding?.code).toBe("25064002");
 		expect(item.answerOption?.[0].valueCoding?.system).toBe(
@@ -168,8 +178,10 @@ describe("compileFhirQuestionnaire – questions", () => {
 
 	it("maps string question to FHIR string type", () => {
 		const result = compileFhirQuestionnaire(WITH_SECTION);
-		const groupItem = result.fhirQuestionnaire!.item![0];
-		const qItem = groupItem.item![0];
+		if (!result.fhirQuestionnaire)
+			throw new Error("Expected fhirQuestionnaire");
+		const groupItem = (result.fhirQuestionnaire.item ?? [])[0];
+		const qItem = (groupItem.item ?? [])[0];
 		expect(qItem.type).toBe("string");
 	});
 
@@ -193,7 +205,7 @@ describe("compileFhirQuestionnaire – questions", () => {
 			],
 		};
 		const result = compileFhirQuestionnaire(q);
-		expect(result.fhirQuestionnaire!.item?.[0]?.type).toBe("boolean");
+		expect(result.fhirQuestionnaire?.item?.[0]?.type).toBe("boolean");
 	});
 
 	it("maps custom question to FHIR attachment type", () => {
@@ -217,12 +229,14 @@ describe("compileFhirQuestionnaire – questions", () => {
 			],
 		};
 		const result = compileFhirQuestionnaire(q);
-		expect(result.fhirQuestionnaire!.item?.[0]?.type).toBe("attachment");
+		expect(result.fhirQuestionnaire?.item?.[0]?.type).toBe("attachment");
 	});
 
 	it("generates a stable linkId for each item", () => {
 		const result = compileFhirQuestionnaire(SIMPLE_QUESTIONNAIRE);
-		const item = result.fhirQuestionnaire!.item![0];
+		if (!result.fhirQuestionnaire)
+			throw new Error("Expected fhirQuestionnaire");
+		const item = (result.fhirQuestionnaire.item ?? [])[0];
 		expect(item.linkId).toBeTruthy();
 		expect(typeof item.linkId).toBe("string");
 	});
