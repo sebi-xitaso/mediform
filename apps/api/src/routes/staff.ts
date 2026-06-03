@@ -4,10 +4,11 @@
  * SUC-04: POST /staff/questionnaires/import
  * SUC-05: POST /staff/questionnaires/preview
  * SUC-06: PUT  /staff/questionnaires/:id
+ * SUC-07: POST /staff/questionnaires/:id/submit
  * SUC-08: GET  /staff/questionnaires
  * SUC-09: POST /staff/questionnaires/:id/review
  *
- * Traceability: issues #25, #26, #27, #29, #36.
+ * Traceability: issues #25, #26, #27, #28, #29, #36.
  */
 
 import { Elysia, t } from "elysia";
@@ -19,12 +20,14 @@ import type {
 	QuestionnaireStatus,
 	ReviewDecision,
 } from "mediform-core";
-import { parseMediform } from "mediform-core";
+import { parseMediform, runQualityChecks } from "mediform-core";
 import { toPatientQuestionnaire } from "../patient-view.js";
 import {
 	createRecord,
+	getQualityCheck,
 	getRecord,
 	listRecords,
+	saveQualityCheck,
 	updateSource,
 	updateStatus,
 } from "../store.js";
@@ -333,5 +336,88 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
 				feedback: t.Optional(t.String()),
 			}),
 			detail: { summary: "Record a review decision (SUC-09)" },
+		},
+	)
+
+	// -------------------------------------------------------------------------
+	// SUC-07: POST /staff/questionnaires/:id/submit  (#28)
+	// -------------------------------------------------------------------------
+	// Transitions Draft → Review when all quality checks pass.
+	// BR-016: block on syntax errors  (reason: SYNTAX_ERRORS)
+	// BR-017: warn but do not block on missing metadata (metadata_complete is
+	//         advisory — a "warning" check result is still allowed through)
+	// BR-018: all four quality checks run on submit
+	// BR-019: only Draft questionnaires may be submitted
+	.post(
+		"/questionnaires/:id/submit",
+		({ params: { id }, set }) => {
+			const record = getRecord(id);
+			if (!record) {
+				set.status = 404;
+				return { message: "Questionnaire not found" };
+			}
+
+			if (record.status !== "draft") {
+				set.status = 409;
+				return {
+					message: `Only Draft questionnaires may be submitted for review. Current status: ${record.status}`,
+				};
+			}
+
+			// Parse & run quality checks
+			const parseResult = parseMediform(record.source);
+			const checkResponse = runQualityChecks({
+				parsed: parseResult.questionnaire,
+				parseErrors: parseResult.errors,
+			});
+
+			// Persist quality-check results (BR-036, #53)
+			saveQualityCheck(id, checkResponse);
+
+			// BR-016: syntax errors are a hard block
+			const syntaxResult = checkResponse.results.find(
+				(r) => r.name === "syntax_valid",
+			);
+			if (syntaxResult?.status === "failed") {
+				set.status = 422;
+				return {
+					reason: "SYNTAX_ERRORS",
+					details: syntaxResult.errors ?? [],
+				};
+			}
+
+			// All blocking checks passed — transition to Review
+			const updated = updateStatus(id, "review");
+			return { questionnaire: updated, qualityCheck: checkResponse };
+		},
+		{
+			params: t.Object({ id: t.String() }),
+			detail: { summary: "Submit questionnaire for review (SUC-07)" },
+		},
+	)
+
+	// -------------------------------------------------------------------------
+	// SUC-14: GET /staff/questionnaires/:id/quality-check
+	// -------------------------------------------------------------------------
+	// Returns the latest persisted quality-check result for a questionnaire.
+	// (Lightweight endpoint; full SUC-14 implementation lives in a future story.)
+	.get(
+		"/questionnaires/:id/quality-check",
+		({ params: { id }, set }) => {
+			const record = getRecord(id);
+			if (!record) {
+				set.status = 404;
+				return { message: "Questionnaire not found" };
+			}
+			const result = getQualityCheck(id);
+			if (!result) {
+				set.status = 404;
+				return { message: "No quality-check results found" };
+			}
+			return result;
+		},
+		{
+			params: t.Object({ id: t.String() }),
+			detail: { summary: "Get latest quality-check results (SUC-14 partial)" },
 		},
 	);

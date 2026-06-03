@@ -1,12 +1,16 @@
 /**
  * Questionnaire repository interface and SQLite implementation.
  *
- * Traceability: ADR-009, #67.
+ * Traceability: ADR-009, #67, #53.
  */
 
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
-import type { QuestionnaireRecord, QuestionnaireStatus } from "mediform-core";
+import type {
+	QualityCheckResponse,
+	QuestionnaireRecord,
+	QuestionnaireStatus,
+} from "mediform-core";
 import type { CreateRecordInput, UpdateSourceInput } from "./store.js";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +37,10 @@ export interface QuestionnaireRepository {
 	list(statuses?: QuestionnaireStatus[]): QuestionnaireRecord[];
 	/** Remove all records. Intended for use in tests only. */
 	clear(): void;
+	/** Persist the latest quality-check result for a questionnaire (#53). */
+	saveQualityCheck(questionnaireId: string, result: QualityCheckResponse): void;
+	/** Retrieve the latest quality-check result for a questionnaire (#53). */
+	getQualityCheck(questionnaireId: string): QualityCheckResponse | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +100,14 @@ CREATE TABLE IF NOT EXISTS questionnaires (
   rejection_reason     TEXT,
   patient_link         TEXT,
   fhir_questionnaire_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS quality_checks (
+  questionnaire_id TEXT PRIMARY KEY,
+  checked_at       TEXT NOT NULL,
+  passed           INTEGER NOT NULL,
+  results_json     TEXT NOT NULL,
+  FOREIGN KEY (questionnaire_id) REFERENCES questionnaires(id)
 );
 `;
 
@@ -210,5 +226,43 @@ export class SqliteQuestionnaireRepository implements QuestionnaireRepository {
 
 	clear(): void {
 		this.db.exec("DELETE FROM questionnaires");
+		this.db.exec("DELETE FROM quality_checks");
+	}
+
+	saveQualityCheck(
+		questionnaireId: string,
+		result: QualityCheckResponse,
+	): void {
+		this.db
+			.prepare(
+				`INSERT INTO quality_checks (questionnaire_id, checked_at, passed, results_json)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(questionnaire_id) DO UPDATE SET
+           checked_at   = excluded.checked_at,
+           passed       = excluded.passed,
+           results_json = excluded.results_json`,
+			)
+			.run(
+				questionnaireId,
+				result.checkedAt,
+				result.passed ? 1 : 0,
+				JSON.stringify(result.results),
+			);
+	}
+
+	getQualityCheck(questionnaireId: string): QualityCheckResponse | undefined {
+		const row = this.db
+			.prepare("SELECT * FROM quality_checks WHERE questionnaire_id = ?")
+			.get(questionnaireId) as {
+			checked_at: string;
+			passed: number;
+			results_json: string;
+		} | null;
+		if (!row) return undefined;
+		return {
+			checkedAt: row.checked_at,
+			passed: row.passed === 1,
+			results: JSON.parse(row.results_json),
+		};
 	}
 }

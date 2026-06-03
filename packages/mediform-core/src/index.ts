@@ -7,5 +7,6 @@
 
 export * from "./compiler.js";
 export * from "./parser.js";
+export * from "./quality-check.js";
 export * from "./response-compiler.js";
 export * from "./types.js";
