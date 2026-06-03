@@ -64,7 +64,7 @@ export interface ParsedQuestion {
 }
 
 export interface ParsedSection {
-  title: string;
+  title: string | null;
   questions: ParsedQuestion[];
 }
 
@@ -99,4 +99,58 @@ export interface CompileError {
   questionId?: string;
   field?: string;
   message: string;
+}
+
+// ---------------------------------------------------------------------------
+// FHIR resource types (minimal subset needed for the prototype)
+// ---------------------------------------------------------------------------
+
+export type FHIRQuestionnaireStatus =
+  | "draft"
+  | "active"
+  | "retired"
+  | "unknown";
+
+export interface FHIRCoding {
+  system?: string;
+  code: string;
+  display?: string;
+}
+
+export interface FHIRAnswerOption {
+  valueCoding?: FHIRCoding;
+  valueString?: string;
+}
+
+export interface FHIRQuestionnaireItem {
+  linkId: string;
+  text?: string;
+  type: string;
+  required?: boolean;
+  code?: FHIRCoding[];
+  answerOption?: FHIRAnswerOption[];
+  item?: FHIRQuestionnaireItem[];
+}
+
+export interface FHIRQuestionnaire {
+  resourceType: "Questionnaire";
+  id?: string;
+  title?: string;
+  description?: string;
+  status: FHIRQuestionnaireStatus;
+  version?: string;
+  item?: FHIRQuestionnaireItem[];
+}
+
+export interface CompileWarning {
+  questionId?: string;
+  field: string;
+  message: string;
+}
+
+export interface CompileResult {
+  success: boolean;
+  fhirQuestionnaire?: FHIRQuestionnaire;
+  errors: CompileError[];
+  warnings: CompileWarning[];
 }
