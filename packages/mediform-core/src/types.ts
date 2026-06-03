@@ -154,3 +154,59 @@ export interface CompileResult {
   errors: CompileError[];
   warnings: CompileWarning[];
 }
+
+// ---------------------------------------------------------------------------
+// Questionnaire store record
+// ---------------------------------------------------------------------------
+
+export interface QuestionnaireRecord {
+  id: string;
+  title: string;
+  description?: string;
+  status: QuestionnaireStatus;
+  /** Prototype shortcut: no auth, so author is always "staff". */
+  author: string;
+  source: string;
+  createdAt: string;
+  lastModified: string;
+  reviewFeedback?: string;
+  rejectionReason?: string;
+  patientLink?: string;
+  fhirQuestionnaireId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Patient-facing questionnaire shape (SUC-01 / SUC-05 output)
+// ---------------------------------------------------------------------------
+
+export interface PatientQuestion {
+  id: string;
+  title: string;
+  description?: string;
+  type: QuestionType;
+  required: boolean;
+  config: Record<string, unknown>;
+  renderer?: string;
+}
+
+export interface PatientSection {
+  title: string | null;
+  questions: PatientQuestion[];
+}
+
+export interface PatientQuestionnaire {
+  id: string;
+  title: string;
+  description?: string;
+  sections: PatientSection[];
+}
+
+// ---------------------------------------------------------------------------
+// Metadata warnings (SUC-04 / SUC-06 output)
+// ---------------------------------------------------------------------------
+
+export interface MetadataWarning {
+  questionId?: string;
+  field: string;
+  message: string;
+}

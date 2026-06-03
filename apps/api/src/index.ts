@@ -6,11 +6,13 @@
  */
 
 import { Elysia } from "elysia";
+import { staffRoutes } from "./routes/staff.js";
 
 const PORT = Number(Bun.env["PORT"] ?? 3000);
 
 export const app = new Elysia()
-  .get("/health", () => ({ status: "ok" }));
+  .get("/health", () => ({ status: "ok" }))
+  .use(staffRoutes);
 
 app.listen(PORT, () => {
   console.log(`mediform API listening on http://localhost:${PORT}`);
