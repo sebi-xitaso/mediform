@@ -1,17 +1,17 @@
 /**
- * In-memory questionnaire store.
+ * Questionnaire store — thin facade over SqliteQuestionnaireRepository.
  *
- * Prototype shortcut: persistence is in-process memory only.
- * Replace with a real database adapter when the prototype graduates.
+ * Dev server: uses file-based SQLite at DATABASE_PATH (defaults to mediform.db).
+ * Tests: set DATABASE_PATH=:memory: or leave unset for in-process memory DB.
  *
- * Traceability: shared by SUC-04, SUC-06, SUC-07, SUC-08, SUC-09, etc.
+ * Traceability: ADR-009, #67.
  */
 
-import { randomUUID } from "node:crypto";
 import type { QuestionnaireRecord, QuestionnaireStatus } from "mediform-core";
+import { SqliteQuestionnaireRepository } from "./repository.js";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types (re-exported so existing import sites keep working)
 // ---------------------------------------------------------------------------
 
 export interface CreateRecordInput {
@@ -27,31 +27,24 @@ export interface UpdateSourceInput {
 }
 
 // ---------------------------------------------------------------------------
-// Store implementation
+// Singleton repository
 // ---------------------------------------------------------------------------
 
-const records = new Map<string, QuestionnaireRecord>();
+const dbPath = Bun.env.DATABASE_PATH ?? ":memory:";
+const repo = new SqliteQuestionnaireRepository(dbPath);
+
+// ---------------------------------------------------------------------------
+// Public API (same surface as the previous in-memory store)
+// ---------------------------------------------------------------------------
 
 /** Create a new questionnaire record in Draft status. */
 export function createRecord(input: CreateRecordInput): QuestionnaireRecord {
-	const now = new Date().toISOString();
-	const record: QuestionnaireRecord = {
-		id: randomUUID(),
-		title: input.title,
-		description: input.description,
-		status: "draft",
-		author: "staff",
-		source: input.source,
-		createdAt: now,
-		lastModified: now,
-	};
-	records.set(record.id, record);
-	return record;
+	return repo.create(input);
 }
 
 /** Retrieve a record by ID. Returns undefined if not found. */
 export function getRecord(id: string): QuestionnaireRecord | undefined {
-	return records.get(id);
+	return repo.getById(id);
 }
 
 /** Update the source of an existing record. Bumps lastModified. */
@@ -59,20 +52,10 @@ export function updateSource(
 	id: string,
 	input: UpdateSourceInput,
 ): QuestionnaireRecord | undefined {
-	const record = records.get(id);
-	if (!record) return undefined;
-	const updated: QuestionnaireRecord = {
-		...record,
-		source: input.source,
-		title: input.title ?? record.title,
-		description: input.description ?? record.description,
-		lastModified: new Date().toISOString(),
-	};
-	records.set(id, updated);
-	return updated;
+	return repo.update(id, input);
 }
 
-/** Update the status of an existing record. */
+/** Update the status (and optional extra fields) of an existing record. */
 export function updateStatus(
 	id: string,
 	status: QuestionnaireStatus,
@@ -86,46 +69,19 @@ export function updateStatus(
 		>
 	>,
 ): QuestionnaireRecord | undefined {
-	const record = records.get(id);
-	if (!record) return undefined;
-	const updated: QuestionnaireRecord = {
-		...record,
-		status,
-		lastModified: new Date().toISOString(),
-		...extra,
-	};
-	records.set(id, updated);
-	return updated;
+	return repo.updateStatus(id, status, extra);
 }
 
-/** List all records, optionally filtered by one or more statuses.
- *
- * Sort order (BR-035):
- *   1. Review-status items first (priority for trained staff).
- *   2. Within each group, most-recently-modified first.
- */
+/** List all records, optionally filtered by one or more statuses (BR-035). */
 export function listRecords(
 	statuses?: QuestionnaireStatus[],
 ): QuestionnaireRecord[] {
-	let all = Array.from(records.values());
-	if (statuses && statuses.length > 0) {
-		all = all.filter((r) => statuses.includes(r.status));
-	}
-	return all.sort((a, b) => {
-		// Review items first
-		const aReview = a.status === "review" ? 0 : 1;
-		const bReview = b.status === "review" ? 0 : 1;
-		if (aReview !== bReview) return aReview - bReview;
-		// Then by lastModified descending
-		return (
-			new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
-		);
-	});
+	return repo.list(statuses);
 }
 
 /**
- * Clear all records. Intended for use in tests only.
+ * Remove all records. Intended for use in tests only.
  */
 export function _clearStore(): void {
-	records.clear();
+	repo.clear();
 }
