@@ -94,35 +94,35 @@ Trace the pattern.
 // ---------------------------------------------------------------------------
 
 describe("parseMediform – frontmatter", () => {
-  it("extracts title, description, version, and status", () => {
-    const result = parseMediform(MINIMAL_SOURCE);
-    expect(result.success).toBe(true);
-    expect(result.questionnaire?.frontmatter.title).toBe("Pain Assessment");
-    expect(result.questionnaire?.frontmatter.description).toBe(
-      "Post-op pain check"
-    );
-    expect(result.questionnaire?.frontmatter.version).toBe("1.0");
-    expect(result.questionnaire?.frontmatter.status).toBe("draft");
-  });
+	it("extracts title, description, version, and status", () => {
+		const result = parseMediform(MINIMAL_SOURCE);
+		expect(result.success).toBe(true);
+		expect(result.questionnaire?.frontmatter.title).toBe("Pain Assessment");
+		expect(result.questionnaire?.frontmatter.description).toBe(
+			"Post-op pain check",
+		);
+		expect(result.questionnaire?.frontmatter.version).toBe("1.0");
+		expect(result.questionnaire?.frontmatter.status).toBe("draft");
+	});
 
-  it("returns a parse error when frontmatter is missing", () => {
-    const result = parseMediform("# No Frontmatter\n\n- type: string\n");
-    expect(result.success).toBe(false);
-    expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0].message).toMatch(/frontmatter/i);
-  });
+	it("returns a parse error when frontmatter is missing", () => {
+		const result = parseMediform("# No Frontmatter\n\n- type: string\n");
+		expect(result.success).toBe(false);
+		expect(result.errors.length).toBeGreaterThan(0);
+		expect(result.errors[0].message).toMatch(/frontmatter/i);
+	});
 
-  it("returns a parse error when frontmatter YAML is malformed", () => {
-    const result = parseMediform("---\ntitle: [unclosed\n---\n");
-    expect(result.success).toBe(false);
-    expect(result.errors.length).toBeGreaterThan(0);
-  });
+	it("returns a parse error when frontmatter YAML is malformed", () => {
+		const result = parseMediform("---\ntitle: [unclosed\n---\n");
+		expect(result.success).toBe(false);
+		expect(result.errors.length).toBeGreaterThan(0);
+	});
 
-  it("returns a parse error when required title is absent", () => {
-    const result = parseMediform("---\nversion: 1.0\nstatus: draft\n---\n");
-    expect(result.success).toBe(false);
-    expect(result.errors[0].message).toMatch(/title/i);
-  });
+	it("returns a parse error when required title is absent", () => {
+		const result = parseMediform("---\nversion: 1.0\nstatus: draft\n---\n");
+		expect(result.success).toBe(false);
+		expect(result.errors[0].message).toMatch(/title/i);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -130,22 +130,22 @@ describe("parseMediform – frontmatter", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseMediform – sections", () => {
-  it("wraps top-level questions in an implicit section when no ## heading exists", () => {
-    const result = parseMediform(MINIMAL_SOURCE);
-    expect(result.success).toBe(true);
-    const sections = result.questionnaire!.sections;
-    expect(sections).toHaveLength(1);
-    expect(sections[0].title).toBeNull();
-  });
+	it("wraps top-level questions in an implicit section when no ## heading exists", () => {
+		const result = parseMediform(MINIMAL_SOURCE);
+		expect(result.success).toBe(true);
+		const sections = result.questionnaire?.sections;
+		expect(sections).toHaveLength(1);
+		expect(sections[0].title).toBeNull();
+	});
 
-  it("creates named sections for ## headings", () => {
-    const result = parseMediform(SECTION_SOURCE);
-    expect(result.success).toBe(true);
-    const sections = result.questionnaire!.sections;
-    expect(sections).toHaveLength(2);
-    expect(sections[0].title).toBe("General");
-    expect(sections[1].title).toBe("Motor");
-  });
+	it("creates named sections for ## headings", () => {
+		const result = parseMediform(SECTION_SOURCE);
+		expect(result.success).toBe(true);
+		const sections = result.questionnaire?.sections;
+		expect(sections).toHaveLength(2);
+		expect(sections[0].title).toBe("General");
+		expect(sections[1].title).toBe("Motor");
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -153,53 +153,53 @@ describe("parseMediform – sections", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseMediform – questions", () => {
-  it("parses a choice question with options", () => {
-    const result = parseMediform(MINIMAL_SOURCE);
-    expect(result.success).toBe(true);
-    const q = result.questionnaire!.sections[0].questions[0];
-    expect(q.title).toBe("Pain Location");
-    expect(q.type).toBe("choice");
-    expect(q.required).toBe(true);
-    expect(q.mapsTo).toBe("Coding");
-    expect(q.loinc).toBe("72514-3");
-    expect(q.options).toHaveLength(2);
-    expect(q.options![0].label).toBe("Head");
-    expect(q.options![0].snomedCode).toBe("SNOMED:25064002");
-  });
+	it("parses a choice question with options", () => {
+		const result = parseMediform(MINIMAL_SOURCE);
+		expect(result.success).toBe(true);
+		const q = result.questionnaire?.sections[0].questions[0];
+		expect(q.title).toBe("Pain Location");
+		expect(q.type).toBe("choice");
+		expect(q.required).toBe(true);
+		expect(q.mapsTo).toBe("Coding");
+		expect(q.loinc).toBe("72514-3");
+		expect(q.options).toHaveLength(2);
+		expect(q.options?.[0].label).toBe("Head");
+		expect(q.options?.[0].snomedCode).toBe("SNOMED:25064002");
+	});
 
-  it("parses prose below a # heading as description", () => {
-    const result = parseMediform(MINIMAL_SOURCE);
-    const q = result.questionnaire!.sections[0].questions[0];
-    expect(q.description).toBe("Where do you feel pain?");
-  });
+	it("parses prose below a # heading as description", () => {
+		const result = parseMediform(MINIMAL_SOURCE);
+		const q = result.questionnaire?.sections[0].questions[0];
+		expect(q.description).toBe("Where do you feel pain?");
+	});
 
-  it("parses a scale question with min/max/step in config", () => {
-    const result = parseMediform(SCALE_QUESTION);
-    expect(result.success).toBe(true);
-    const q = result.questionnaire!.sections[0].questions[0];
-    expect(q.type).toBe("scale");
-    expect(q.config["min"]).toBe(0);
-    expect(q.config["max"]).toBe(10);
-    expect(q.config["step"]).toBe(1);
-  });
+	it("parses a scale question with min/max/step in config", () => {
+		const result = parseMediform(SCALE_QUESTION);
+		expect(result.success).toBe(true);
+		const q = result.questionnaire?.sections[0].questions[0];
+		expect(q.type).toBe("scale");
+		expect(q.config.min).toBe(0);
+		expect(q.config.max).toBe(10);
+		expect(q.config.step).toBe(1);
+	});
 
-  it("parses a custom renderer block", () => {
-    const result = parseMediform(SECTION_SOURCE);
-    expect(result.success).toBe(true);
-    const q = result.questionnaire!.sections[1].questions[0];
-    expect(q.type).toBe("custom");
-    expect(q.renderer).toContain("onValue");
-  });
+	it("parses a custom renderer block", () => {
+		const result = parseMediform(SECTION_SOURCE);
+		expect(result.success).toBe(true);
+		const q = result.questionnaire?.sections[1].questions[0];
+		expect(q.type).toBe("custom");
+		expect(q.renderer).toContain("onValue");
+	});
 
-  it("generates a stable id from the question title", () => {
-    const result = parseMediform(MINIMAL_SOURCE);
-    const q = result.questionnaire!.sections[0].questions[0];
-    expect(q.id).toBeTruthy();
-    expect(typeof q.id).toBe("string");
-  });
+	it("generates a stable id from the question title", () => {
+		const result = parseMediform(MINIMAL_SOURCE);
+		const q = result.questionnaire?.sections[0].questions[0];
+		expect(q.id).toBeTruthy();
+		expect(typeof q.id).toBe("string");
+	});
 
-  it("returns an error when type is missing from a question", () => {
-    const source = `---
+	it("returns an error when type is missing from a question", () => {
+		const source = `---
 title: T
 version: 1.0
 status: draft
@@ -210,13 +210,13 @@ status: draft
 - required: true
 - maps-to: string
 `;
-    const result = parseMediform(source);
-    expect(result.success).toBe(false);
-    expect(result.errors.some((e) => e.message.match(/type/i))).toBe(true);
-  });
+		const result = parseMediform(source);
+		expect(result.success).toBe(false);
+		expect(result.errors.some((e) => e.message.match(/type/i))).toBe(true);
+	});
 
-  it("returns an error when type is unknown", () => {
-    const source = `---
+	it("returns an error when type is unknown", () => {
+		const source = `---
 title: T
 version: 1.0
 status: draft
@@ -227,13 +227,13 @@ status: draft
 - type: wizard
 - maps-to: string
 `;
-    const result = parseMediform(source);
-    expect(result.success).toBe(false);
-    expect(result.errors.some((e) => e.message.match(/type/i))).toBe(true);
-  });
+		const result = parseMediform(source);
+		expect(result.success).toBe(false);
+		expect(result.errors.some((e) => e.message.match(/type/i))).toBe(true);
+	});
 
-  it("returns an error when required is not a boolean", () => {
-    const source = `---
+	it("returns an error when required is not a boolean", () => {
+		const source = `---
 title: T
 version: 1.0
 status: draft
@@ -245,10 +245,10 @@ status: draft
 - required: maybe
 - maps-to: string
 `;
-    const result = parseMediform(source);
-    expect(result.success).toBe(false);
-    expect(result.errors.some((e) => e.message.match(/required/i))).toBe(true);
-  });
+		const result = parseMediform(source);
+		expect(result.success).toBe(false);
+		expect(result.errors.some((e) => e.message.match(/required/i))).toBe(true);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -256,10 +256,10 @@ status: draft
 // ---------------------------------------------------------------------------
 
 describe("parseMediform – error locations", () => {
-  it("includes a line number in parse errors", () => {
-    const result = parseMediform("# No Frontmatter\n\n- type: string\n");
-    expect(result.errors[0].line).toBeGreaterThanOrEqual(1);
-  });
+	it("includes a line number in parse errors", () => {
+		const result = parseMediform("# No Frontmatter\n\n- type: string\n");
+		expect(result.errors[0].line).toBeGreaterThanOrEqual(1);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -267,22 +267,22 @@ describe("parseMediform – error locations", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseMediform – NFR-14 performance", () => {
-  it("parses a 50KB .mediform file within 100ms", () => {
-    // Build a synthetic 50KB file
-    const question = `\n# Question {{n}}\n\nDescription text.\n\n- type: choice\n- required: true\n- maps-to: Coding\n- options:\n  - Option A | SNOMED:1\n  - Option B | SNOMED:2\n`;
-    const header = `---\ntitle: Large Form\nversion: 1.0\nstatus: draft\n---\n`;
-    let body = "";
-    let i = 0;
-    while (header.length + body.length < 50_000) {
-      body += question.replace("{{n}}", String(++i));
-    }
-    const source = header + body;
-    expect(source.length).toBeGreaterThanOrEqual(50_000);
+	it("parses a 50KB .mediform file within 100ms", () => {
+		// Build a synthetic 50KB file
+		const question = `\n# Question {{n}}\n\nDescription text.\n\n- type: choice\n- required: true\n- maps-to: Coding\n- options:\n  - Option A | SNOMED:1\n  - Option B | SNOMED:2\n`;
+		const header = `---\ntitle: Large Form\nversion: 1.0\nstatus: draft\n---\n`;
+		let body = "";
+		let i = 0;
+		while (header.length + body.length < 50_000) {
+			body += question.replace("{{n}}", String(++i));
+		}
+		const source = header + body;
+		expect(source.length).toBeGreaterThanOrEqual(50_000);
 
-    const start = performance.now();
-    parseMediform(source);
-    const elapsed = performance.now() - start;
+		const start = performance.now();
+		parseMediform(source);
+		const elapsed = performance.now() - start;
 
-    expect(elapsed).toBeLessThan(100);
-  });
+		expect(elapsed).toBeLessThan(100);
+	});
 });

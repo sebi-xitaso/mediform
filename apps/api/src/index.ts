@@ -6,16 +6,16 @@
  */
 
 import { Elysia } from "elysia";
-import { staffRoutes } from "./routes/staff.js";
 import { patientRoutes } from "./routes/patient.js";
+import { staffRoutes } from "./routes/staff.js";
 
-const PORT = Number(Bun.env["PORT"] ?? 3000);
+const PORT = Number(Bun.env.PORT ?? 3000);
 
 export const app = new Elysia()
-  .get("/health", () => ({ status: "ok" }))
-  .use(staffRoutes)
-  .use(patientRoutes);
+	.get("/health", () => ({ status: "ok" }))
+	.use(staffRoutes)
+	.use(patientRoutes);
 
 app.listen(PORT, () => {
-  console.log(`mediform API listening on http://localhost:${PORT}`);
+	console.log(`mediform API listening on http://localhost:${PORT}`);
 });

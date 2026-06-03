@@ -10,74 +10,74 @@
 // ---------------------------------------------------------------------------
 
 export type QuestionnaireStatus =
-  | "draft"
-  | "review"
-  | "approved"
-  | "published"
-  | "rejected"
-  | "retired";
+	| "draft"
+	| "review"
+	| "approved"
+	| "published"
+	| "rejected"
+	| "retired";
 
 // ---------------------------------------------------------------------------
 // .mediform format — parsed representation
 // ---------------------------------------------------------------------------
 
 export type MapsToType =
-  | "boolean"
-  | "integer"
-  | "decimal"
-  | "string"
-  | "date"
-  | "Coding"
-  | "Quantity";
+	| "boolean"
+	| "integer"
+	| "decimal"
+	| "string"
+	| "date"
+	| "Coding"
+	| "Quantity";
 
 export type QuestionType =
-  | "boolean"
-  | "integer"
-  | "decimal"
-  | "string"
-  | "date"
-  | "choice"
-  | "scale"
-  | "custom";
+	| "boolean"
+	| "integer"
+	| "decimal"
+	| "string"
+	| "date"
+	| "choice"
+	| "scale"
+	| "custom";
 
 export interface AnswerOption {
-  label: string;
-  /** SNOMED code in the form "SNOMED:<code>" */
-  snomedCode?: string;
+	label: string;
+	/** SNOMED code in the form "SNOMED:<code>" */
+	snomedCode?: string;
 }
 
 export interface ParsedQuestion {
-  id: string;
-  title: string;
-  description?: string;
-  type: QuestionType;
-  mapsTo: MapsToType;
-  required: boolean;
-  loinc?: string;
-  options?: AnswerOption[];
-  /** Renderer JS source for type === "custom" */
-  renderer?: string;
-  /** For type === "scale" */
-  min?: number;
-  max?: number;
-  step?: number;
+	id: string;
+	title: string;
+	description?: string;
+	type: QuestionType;
+	mapsTo: MapsToType;
+	required: boolean;
+	loinc?: string;
+	options?: AnswerOption[];
+	/** Renderer JS source for type === "custom" */
+	renderer?: string;
+	/** For type === "scale" */
+	min?: number;
+	max?: number;
+	step?: number;
 }
 
 export interface ParsedSection {
-  title: string | null;
-  questions: ParsedQuestion[];
+	title: string | null;
+	questions: ParsedQuestion[];
 }
 
 export interface ParsedQuestionnaireFrontmatter {
-  title: string;
-  description?: string;
-  version: string;
-  status: QuestionnaireStatus;
+	title: string;
+	description?: string;
+	version: string;
+	status: QuestionnaireStatus;
 }
 
 export interface ParsedQuestionnaire {
-  frontmatter: ParsedQuestionnaireFrontmatter;
-  sections: ParsedSection[];
+	frontmatter: ParsedQuestionnaireFrontmatter;
+	sections: ParsedSection[];
 }
 
 // ---------------------------------------------------------------------------
@@ -85,20 +85,20 @@ export interface ParsedQuestionnaire {
 // ---------------------------------------------------------------------------
 
 export interface ParseError {
-  line: number;
-  column?: number;
-  message: string;
+	line: number;
+	column?: number;
+	message: string;
 }
 
 export interface ParseWarning {
-  line?: number;
-  message: string;
+	line?: number;
+	message: string;
 }
 
 export interface CompileError {
-  questionId?: string;
-  field?: string;
-  message: string;
+	questionId?: string;
+	field?: string;
+	message: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,53 +106,53 @@ export interface CompileError {
 // ---------------------------------------------------------------------------
 
 export type FHIRQuestionnaireStatus =
-  | "draft"
-  | "active"
-  | "retired"
-  | "unknown";
+	| "draft"
+	| "active"
+	| "retired"
+	| "unknown";
 
 export interface FHIRCoding {
-  system?: string;
-  code: string;
-  display?: string;
+	system?: string;
+	code: string;
+	display?: string;
 }
 
 export interface FHIRAnswerOption {
-  valueCoding?: FHIRCoding;
-  valueString?: string;
+	valueCoding?: FHIRCoding;
+	valueString?: string;
 }
 
 export interface FHIRQuestionnaireItem {
-  linkId: string;
-  text?: string;
-  type: string;
-  required?: boolean;
-  code?: FHIRCoding[];
-  answerOption?: FHIRAnswerOption[];
-  item?: FHIRQuestionnaireItem[];
+	linkId: string;
+	text?: string;
+	type: string;
+	required?: boolean;
+	code?: FHIRCoding[];
+	answerOption?: FHIRAnswerOption[];
+	item?: FHIRQuestionnaireItem[];
 }
 
 export interface FHIRQuestionnaire {
-  resourceType: "Questionnaire";
-  id?: string;
-  title?: string;
-  description?: string;
-  status: FHIRQuestionnaireStatus;
-  version?: string;
-  item?: FHIRQuestionnaireItem[];
+	resourceType: "Questionnaire";
+	id?: string;
+	title?: string;
+	description?: string;
+	status: FHIRQuestionnaireStatus;
+	version?: string;
+	item?: FHIRQuestionnaireItem[];
 }
 
 export interface CompileWarning {
-  questionId?: string;
-  field: string;
-  message: string;
+	questionId?: string;
+	field: string;
+	message: string;
 }
 
 export interface CompileResult {
-  success: boolean;
-  fhirQuestionnaire?: FHIRQuestionnaire;
-  errors: CompileError[];
-  warnings: CompileWarning[];
+	success: boolean;
+	fhirQuestionnaire?: FHIRQuestionnaire;
+	errors: CompileError[];
+	warnings: CompileWarning[];
 }
 
 // ---------------------------------------------------------------------------
@@ -160,19 +160,19 @@ export interface CompileResult {
 // ---------------------------------------------------------------------------
 
 export interface QuestionnaireRecord {
-  id: string;
-  title: string;
-  description?: string;
-  status: QuestionnaireStatus;
-  /** Prototype shortcut: no auth, so author is always "staff". */
-  author: string;
-  source: string;
-  createdAt: string;
-  lastModified: string;
-  reviewFeedback?: string;
-  rejectionReason?: string;
-  patientLink?: string;
-  fhirQuestionnaireId?: string;
+	id: string;
+	title: string;
+	description?: string;
+	status: QuestionnaireStatus;
+	/** Prototype shortcut: no auth, so author is always "staff". */
+	author: string;
+	source: string;
+	createdAt: string;
+	lastModified: string;
+	reviewFeedback?: string;
+	rejectionReason?: string;
+	patientLink?: string;
+	fhirQuestionnaireId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,25 +180,25 @@ export interface QuestionnaireRecord {
 // ---------------------------------------------------------------------------
 
 export interface PatientQuestion {
-  id: string;
-  title: string;
-  description?: string;
-  type: QuestionType;
-  required: boolean;
-  config: Record<string, unknown>;
-  renderer?: string;
+	id: string;
+	title: string;
+	description?: string;
+	type: QuestionType;
+	required: boolean;
+	config: Record<string, unknown>;
+	renderer?: string;
 }
 
 export interface PatientSection {
-  title: string | null;
-  questions: PatientQuestion[];
+	title: string | null;
+	questions: PatientQuestion[];
 }
 
 export interface PatientQuestionnaire {
-  id: string;
-  title: string;
-  description?: string;
-  sections: PatientSection[];
+	id: string;
+	title: string;
+	description?: string;
+	sections: PatientSection[];
 }
 
 // ---------------------------------------------------------------------------
@@ -206,9 +206,9 @@ export interface PatientQuestionnaire {
 // ---------------------------------------------------------------------------
 
 export interface MetadataWarning {
-  questionId?: string;
-  field: string;
-  message: string;
+	questionId?: string;
+	field: string;
+	message: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,12 +216,12 @@ export interface MetadataWarning {
 // ---------------------------------------------------------------------------
 
 export interface QuestionnaireListItem {
-  id: string;
-  title: string;
-  status: QuestionnaireStatus;
-  author: string;
-  lastModified: string;
-  hasReviewFeedback: boolean;
+	id: string;
+	title: string;
+	status: QuestionnaireStatus;
+	author: string;
+	lastModified: string;
+	hasReviewFeedback: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,45 +235,45 @@ export type ReviewDecision = "approve" | "request_changes" | "reject";
 // ---------------------------------------------------------------------------
 
 export interface Answer {
-  questionId: string;
-  value: unknown;
+	questionId: string;
+	value: unknown;
 }
 
 export interface FHIRQuestionnaireResponseItem {
-  linkId: string;
-  answer?: { value: unknown }[];
+	linkId: string;
+	answer?: { value: unknown }[];
 }
 
 export interface FHIRQuestionnaireResponse {
-  resourceType: "QuestionnaireResponse";
-  id?: string;
-  questionnaire?: string;   // canonical reference, e.g. "Questionnaire/<fhirId>"
-  status: "completed";
-  authored: string;         // ISO 8601
-  item: FHIRQuestionnaireResponseItem[];
+	resourceType: "QuestionnaireResponse";
+	id?: string;
+	questionnaire?: string; // canonical reference, e.g. "Questionnaire/<fhirId>"
+	status: "completed";
+	authored: string; // ISO 8601
+	item: FHIRQuestionnaireResponseItem[];
 }
 
 export interface FHIRObservation {
-  resourceType: "Observation";
-  status: "final";
-  code: { coding: FHIRCoding[] };
-  valueBoolean?: boolean;
-  valueInteger?: number;
-  valueDecimal?: number;
-  valueString?: string;
-  valueDate?: string;
-  valueCoding?: FHIRCoding;
-  valueQuantity?: { value: number; unit?: string };
-  derivedFrom?: { reference: string }[];
+	resourceType: "Observation";
+	status: "final";
+	code: { coding: FHIRCoding[] };
+	valueBoolean?: boolean;
+	valueInteger?: number;
+	valueDecimal?: number;
+	valueString?: string;
+	valueDate?: string;
+	valueCoding?: FHIRCoding;
+	valueQuantity?: { value: number; unit?: string };
+	derivedFrom?: { reference: string }[];
 }
 
 export interface CompileResponseError {
-  questionId: string;
-  message: string;
+	questionId: string;
+	message: string;
 }
 
 export interface CompileResponseResult {
-  questionnaireResponse: FHIRQuestionnaireResponse;
-  observations: FHIRObservation[];
-  errors: CompileResponseError[];
+	questionnaireResponse: FHIRQuestionnaireResponse;
+	observations: FHIRObservation[];
+	errors: CompileResponseError[];
 }
