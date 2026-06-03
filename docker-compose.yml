@@ -1,0 +1,16 @@
+services:
+  hapi:
+    image: hapiproject/hapi:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - hapi_data:/data/hapi
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/fhir/metadata"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  hapi_data:

@@ -36,11 +36,21 @@ bun test
 
 ## HAPI FHIR (local dev)
 
+A `docker-compose.yml` at the workspace root starts a local HAPI FHIR R4 server on port 8080.
+
 ```sh
-docker compose up hapi
+# Start the HAPI FHIR server in the background
+docker compose up hapi -d
+
+# Stop the server (data volume is preserved)
+docker compose down
+
+# Stop the server and remove all persisted data
+docker compose down -v
 ```
 
-See issue #12 for setup details.
+The server exposes its capability statement at `http://localhost:8080/fhir/metadata`.
+The API reads `HAPI_BASE_URL` (default: `http://localhost:8080/fhir`) to reach it.
 
 ## Contributing
 
