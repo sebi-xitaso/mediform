@@ -10,7 +10,29 @@ bun run format    # apply safe fixes and format in place
 ```
 
 Biome is configured in `biome.json` at the workspace root.
-Run `bun run lint` before pushing; the pre-push hook (#66) will enforce this automatically once set up.
+Run `bun run lint` before pushing; the pre-push hook enforces this automatically.
+
+## Pre-push hook
+
+A shell-script hook in `.githooks/pre-push` runs `biome check` on all JS/TS/JSON files changed since `origin/main` before each push. The hook is registered via the `prepare` npm script, which sets `core.hooksPath` to `.githooks`.
+
+After a fresh clone, activate the hook with:
+
+```bash
+bun install   # runs `prepare` automatically
+```
+
+Or manually:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+To bypass the hook in an emergency:
+
+```bash
+git push --no-verify
+```
 
 ## Testing convention
 
