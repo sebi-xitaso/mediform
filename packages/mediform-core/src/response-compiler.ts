@@ -93,7 +93,9 @@ export function compileResponse(
 	const questionnaireResponse: FHIRQuestionnaireResponse = {
 		resourceType: "QuestionnaireResponse",
 		id: responseResponseId,
-		questionnaire: fhirQuestionnaireRef,
+		...(fhirQuestionnaireRef !== undefined
+			? { questionnaire: fhirQuestionnaireRef }
+			: {}),
 		status: "completed",
 		authored: new Date().toISOString(),
 		item: items,

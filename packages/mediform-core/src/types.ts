@@ -61,6 +61,8 @@ export interface ParsedQuestion {
 	min?: number;
 	max?: number;
 	step?: number;
+	/** Arbitrary renderer config (scale bounds, units, etc.) */
+	config?: Record<string, unknown>;
 }
 
 export interface ParsedSection {

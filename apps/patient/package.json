@@ -9,6 +9,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@elysiajs/eden": "^1.4.9",
+		"api": "workspace:*",
 		"mediform-core": "workspace:*",
 		"svelte": "^5.0.0"
 	},

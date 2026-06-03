@@ -21,18 +21,18 @@ export function toPatientQuestionnaire(
 	const patientSections: PatientSection[] = sections.map((section) => ({
 		title: section.title,
 		questions: section.questions.map((q): PatientQuestion => {
-			const config: Record<string, unknown> = { ...q.config };
+			const config: Record<string, unknown> = { ...(q.config ?? {}) };
 			if (q.options) {
 				config.options = q.options.map((o) => ({ label: o.label }));
 			}
 			return {
 				id: q.id,
 				title: q.title,
-				description: q.description,
+				...(q.description !== undefined ? { description: q.description } : {}),
 				type: q.type,
 				required: q.required,
 				config,
-				renderer: q.renderer,
+				...(q.renderer !== undefined ? { renderer: q.renderer } : {}),
 			};
 		}),
 	}));
@@ -40,7 +40,9 @@ export function toPatientQuestionnaire(
 	return {
 		id,
 		title: frontmatter.title,
-		description: frontmatter.description,
+		...(frontmatter.description !== undefined
+			? { description: frontmatter.description }
+			: {}),
 		sections: patientSections,
 	};
 }
